@@ -1,0 +1,42 @@
+# User Local Media Library (Private local music files)
+music/
+*.mp3
+*.m4a
+*.flac
+*.wav
+*.ogg
+*.opus
+
+# Android / Flutter Build artifacts
+build/
+app/build/
+.dart_tool/
+app/.dart_tool/
+.pub/
+app/.pub/
+.pub-cache/
+app/.pub-cache/
+apk/
+*.apk
+*.aab
+
+# Gradle & Android Studio
+.gradle/
+app/android/.gradle/
+app/android/local.properties
+app/android/app/debug
+app/android/app/profile
+app/android/app/release
+*.iml
+.idea/
+.vscode/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+
+# System & OS
+.DS_Store
+Thumbs.db
+*.log

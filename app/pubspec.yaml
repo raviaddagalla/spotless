@@ -1,0 +1,39 @@
+name: spotless
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  audio_service: ^0.18.19
+  cached_network_image: ^3.4.1
+  drift: ^2.34.3
+  drift_flutter: ^0.3.1
+  file_picker: ^11.0.3
+  flutter:
+    sdk: flutter
+  flutter_slidable: ^4.0.3
+  http: ^1.6.0
+  just_audio: ^0.10.6
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  permission_handler: ^13.0.0
+  provider: ^6.1.5+1
+  share_plus: ^11.0.1
+  shared_preferences: ^2.5.5
+
+dependency_overrides:
+  # 14.0.0 hardcodes compileSdk 37 which is not in the SDK repo yet.
+  permission_handler_android: 13.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.34.5
+  build_runner: ^2.15.1
+
+flutter:
+  uses-material-design: true
