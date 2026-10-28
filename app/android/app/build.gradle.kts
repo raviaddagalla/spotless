@@ -43,8 +43,8 @@ android {
 
 chaquopy {
     defaultConfig {
-        version = "3.13"
-        buildPython("C:/Users/aravi/AppData/Local/Programs/Python/Python313/python.exe")
+        version = "3.12"
+        buildPython("C:/Users/aravi/AppData/Local/Programs/Python/Python312/python.exe")
         pip {
             // Pinned so builds are reproducible. If YouTube breaks again,
             // bump this version and rebuild (this is the update path).
