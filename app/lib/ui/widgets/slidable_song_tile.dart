@@ -6,6 +6,7 @@ import '../../core/db/app_database.dart';
 import '../../core/models/song_status.dart';
 import '../../core/services/music_repository.dart';
 import '../../core/state/player_controller.dart';
+import '../theme/spotless_colors.dart';
 import 'playlist_picker.dart';
 import 'song_tile.dart';
 
@@ -42,7 +43,7 @@ class SlidableSongTile extends StatelessWidget {
               extentRatio: 0.28,
               children: [
                 SlidableAction(
-                  backgroundColor: const Color(0xFF1DB954),
+                  backgroundColor: SpotlessColors.primary,
                   foregroundColor: Colors.black,
                   icon: Icons.download,
                   label: 'Download',
@@ -70,7 +71,7 @@ class SlidableSongTile extends StatelessWidget {
         extentRatio: 0.62,
         children: [
           SlidableAction(
-            backgroundColor: const Color(0xFF5C6BC0),
+            backgroundColor: SpotlessColors.secondary,
             icon: Icons.playlist_add,
             label: 'Playlist',
             onPressed: (_) async {
@@ -78,7 +79,7 @@ class SlidableSongTile extends StatelessWidget {
             },
           ),
           SlidableAction(
-            backgroundColor: const Color(0xFF1DB954),
+            backgroundColor: SpotlessColors.primary,
             foregroundColor: Colors.black,
             icon: song.likedAt != null ? Icons.favorite : Icons.favorite_border,
             label: song.likedAt != null ? 'Unlike' : 'Like',

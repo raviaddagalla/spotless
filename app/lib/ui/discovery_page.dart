@@ -6,6 +6,7 @@ import '../core/services/discovery_service.dart';
 import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
 import 'now_playing_page.dart';
+import 'theme/spotless_colors.dart';
 import 'widgets/rating_widget.dart';
 
 /// Stream-first Discovery screen.
@@ -91,6 +92,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerController>();
 
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Discover Music'),
@@ -142,8 +144,8 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.travel_explore_rounded,
-                                size: 56, color: Color(0xFF1DB954)),
+                            Icon(Icons.travel_explore_rounded,
+                                size: 56, color: scheme.primary),
                             const SizedBox(height: 16),
                             const Text(
                               'No recommendations yet',
@@ -180,12 +182,12 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
 
                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 6),
-                          color: const Color(0xFF1E1E1E),
+                          color: SpotlessColors.surface,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(SpotlessColors.radiusLg),
                             side: isPlayingThis
-                                ? const BorderSide(
-                                    color: Color(0xFF1DB954), width: 1.5)
+                                ? BorderSide(
+                                    color: scheme.primary, width: 1.5)
                                 : BorderSide.none,
                           ),
                           child: Padding(
@@ -237,8 +239,8 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                                               fontWeight: FontWeight.w700,
                                               fontSize: 15,
                                               color: isPlayingThis
-                                                  ? const Color(0xFF1DB954)
-                                                  : Colors.white,
+                                                  ? scheme.primary
+                                                  : SpotlessColors.onSurface,
                                             ),
                                           ),
                                           const SizedBox(height: 2),
@@ -291,7 +293,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                                         isPlayingThis && player.playing
                                             ? Icons.pause_circle_filled_rounded
                                             : Icons.play_circle_fill_rounded,
-                                        color: const Color(0xFF1DB954),
+                                        color: scheme.primary,
                                         size: 40,
                                       ),
                                       tooltip: 'Stream this track',

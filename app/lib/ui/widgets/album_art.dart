@@ -5,9 +5,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/db/app_database.dart';
+import '../theme/spotless_colors.dart';
 
 /// Shows a song's cover: local cached file, then network URL, then a
 /// gradient placeholder with the title initials.
+///
+/// PixelPlayer-inspired: uses [SpotlessColors.radiusMd] for rounded corners
+/// and a richer gradient placeholder.
 class AlbumArt extends StatelessWidget {
   final SongRow? song;
   final String? title;
@@ -15,6 +19,7 @@ class AlbumArt extends StatelessWidget {
   final String? artPath;
   final String? artUrl;
   final double size;
+  final double? borderRadius;
 
   const AlbumArt({
     super.key,
@@ -24,6 +29,7 @@ class AlbumArt extends StatelessWidget {
     this.artPath,
     this.artUrl,
     this.size = 48,
+    this.borderRadius,
   });
 
   String get _title => song?.title ?? title ?? '?';
@@ -33,7 +39,8 @@ class AlbumArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = this.size;
-    final radius = BorderRadius.circular(max(4, size * 0.1));
+    final r = borderRadius ?? max(4, size * 0.12);
+    final radius = BorderRadius.circular(r);
 
     Widget? image;
     final path = _path;
@@ -72,7 +79,7 @@ class AlbumArt extends StatelessWidget {
     if (initials.isEmpty) initials = '♪';
     final hash = _title.hashCode.abs();
     final colors = [
-      const Color(0xFF1DB954),
+      SpotlessColors.primary,
       const Color(0xFF8D6E63),
       const Color(0xFF5C6BC0),
       const Color(0xFF26A69A),
@@ -89,7 +96,7 @@ class AlbumArt extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [c.withValues(alpha: 0.85), c.withValues(alpha: 0.45)],
+          colors: [c.withValues(alpha: 0.85), c.withValues(alpha: 0.35)],
         ),
       ),
       alignment: Alignment.center,
@@ -97,7 +104,7 @@ class AlbumArt extends StatelessWidget {
         initials,
         style: TextStyle(
           color: Colors.white,
-          fontSize: size * 0.32,
+          fontSize: size * 0.3,
           fontWeight: FontWeight.w700,
         ),
       ),

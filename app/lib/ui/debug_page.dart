@@ -5,6 +5,7 @@ import '../core/config/app_config.dart';
 import '../core/db/app_database.dart';
 import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
+import 'theme/spotless_colors.dart';
 
 /// Developer / Diagnostics screen as specified in Specification §50.
 class DebugPage extends StatefulWidget {
@@ -142,9 +143,12 @@ class _DebugPageState extends State<DebugPage> {
     required IconData icon,
     required List<Widget> children,
   }) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Card(
-      color: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: SpotlessColors.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -152,7 +156,7 @@ class _DebugPageState extends State<DebugPage> {
           children: [
             Row(
               children: [
-                Icon(icon, color: const Color(0xFF1DB954), size: 22),
+                Icon(icon, color: primary, size: 22),
                 const SizedBox(width: 8),
                 Text(
                   title,

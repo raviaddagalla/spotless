@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../core/services/music_repository.dart';
 import 'artist_detail_page.dart';
+import 'theme/spotless_colors.dart';
 
+/// Grid/list of artists with circular avatar and song count.
 class ArtistsPage extends StatefulWidget {
   const ArtistsPage({super.key});
 
@@ -22,41 +24,66 @@ class _ArtistsPageState extends State<ArtistsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Artists')),
-      body: FutureBuilder<List<({String name, int count})>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}'));
-          }
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final artists = snap.data!;
-          if (artists.isEmpty) {
-            return const Center(child: Text('No artists yet.'));
-          }
-          return ListView.builder(
-            itemCount: artists.length,
-            itemBuilder: (context, index) {
-              final a = artists[index];
-              return ListTile(
+    final scheme = Theme.of(context).colorScheme;
+
+    return FutureBuilder<List<({String name, int count})>>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(child: Text('Error: ${snap.error}'));
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final artists = snap.data!;
+        if (artists.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.person_outline, size: 48,
+                    color: SpotlessColors.onSurfaceDim),
+                const SizedBox(height: 12),
+                Text('No artists yet.',
+                    style: TextStyle(color: SpotlessColors.onSurfaceMedium)),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: artists.length,
+          itemBuilder: (context, index) {
+            final a = artists[index];
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+              decoration: BoxDecoration(
+                color: SpotlessColors.surface,
+                borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+              ),
+              child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: const Color(0xFF1DB954).withValues(alpha: 0.2),
+                  backgroundColor: scheme.primary.withValues(alpha: 0.15),
                   child: Text(
-                    a.name.isEmpty
-                        ? '?'
-                        : a.name[0].toUpperCase(),
-                    style: const TextStyle(color: Color(0xFF1DB954)),
+                    a.name.isEmpty ? '?' : a.name[0].toUpperCase(),
+                    style: TextStyle(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                title: Text(a.name),
+                title: Text(a.name, style: Theme.of(context).textTheme.titleSmall),
                 subtitle: Text(
                   '${a.count} songs',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: SpotlessColors.onSurfaceDim,
+                      ),
                 ),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: Icon(Icons.chevron_right,
+                    color: SpotlessColors.onSurfaceDim),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+                ),
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -64,11 +91,11 @@ class _ArtistsPageState extends State<ArtistsPage> {
                     ),
                   );
                 },
-              );
-            },
-          );
-        },
-      ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

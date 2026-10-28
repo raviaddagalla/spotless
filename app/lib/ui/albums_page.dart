@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../core/services/music_repository.dart';
 import 'album_detail_page.dart';
+import 'theme/spotless_colors.dart';
 import 'widgets/album_art.dart';
 
+/// Grid/list of albums with large art and rounded card containers.
 class AlbumsPage extends StatefulWidget {
   const AlbumsPage({super.key});
 
@@ -23,43 +25,48 @@ class _AlbumsPageState extends State<AlbumsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Albums')),
-      body: FutureBuilder<List<({String album, String artist, int count})>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}'));
-          }
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final albums = snap.data!;
-          if (albums.isEmpty) {
-            return const Center(child: Text('No albums yet.'));
-          }
-          return ListView.builder(
-            itemCount: albums.length,
-            itemBuilder: (context, index) {
-              final a = albums[index];
-              return ListTile(
-                leading: AlbumArt(
-                  title: a.album,
-                  subtitle: a.artist,
-                  size: 48,
-                ),
-                title: Text(
-                  a.album,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '${a.artist} · ${a.count} songs',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                trailing: const Icon(Icons.chevron_right),
+    final theme = Theme.of(context);
+
+    return FutureBuilder<List<({String album, String artist, int count})>>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(child: Text('Error: ${snap.error}'));
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final albums = snap.data!;
+        if (albums.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.album_outlined, size: 48,
+                    color: SpotlessColors.onSurfaceDim),
+                const SizedBox(height: 12),
+                Text('No albums yet.',
+                    style: TextStyle(color: SpotlessColors.onSurfaceMedium)),
+              ],
+            ),
+          );
+        }
+        return GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 14,
+            mainAxisSpacing: 14,
+            childAspectRatio: 0.78,
+          ),
+          itemCount: albums.length,
+          itemBuilder: (context, index) {
+            final a = albums[index];
+            return Material(
+              color: SpotlessColors.surface,
+              borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -70,11 +77,44 @@ class _AlbumsPageState extends State<AlbumsPage> {
                     ),
                   );
                 },
-              );
-            },
-          );
-        },
-      ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: AlbumArt(
+                        title: a.album,
+                        subtitle: a.artist,
+                        size: 200,
+                        borderRadius: 0,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                      child: Text(
+                        a.album,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                      child: Text(
+                        '${a.artist} · ${a.count} songs',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: SpotlessColors.onSurfaceDim,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -6,6 +6,7 @@ import '../../core/db/app_database.dart';
 import '../../core/services/discovery_service.dart';
 import '../../core/services/music_repository.dart';
 import '../../core/state/player_controller.dart';
+import '../theme/spotless_colors.dart';
 import 'rating_widget.dart';
 
 /// Bottom sheet displaying track-based radio and similar recommendations.
@@ -23,9 +24,9 @@ class SimilarTracksSheet extends StatefulWidget {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF161616),
+      backgroundColor: SpotlessColors.surfaceHigh,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(SpotlessColors.radiusXl)),
       ),
       builder: (_) => SimilarTracksSheet(seedTrack: seedTrack),
     );
@@ -154,7 +155,7 @@ class _SimilarTracksSheetState extends State<SimilarTracksSheet> {
             const Text(
               '★ Rating 8+ will automatically promote and download this track to your library!',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Color(0xFF1DB954)),
+              style: TextStyle(fontSize: 12, color: SpotlessColors.primary),
             ),
           ],
         ),
@@ -195,7 +196,7 @@ class _SimilarTracksSheetState extends State<SimilarTracksSheet> {
               padding: const EdgeInsets.fromLTRB(20, 0, 16, 12),
               child: Row(
                 children: [
-                  const Icon(Icons.radio_rounded, color: Color(0xFF1DB954), size: 28),
+                  const Icon(Icons.radio_rounded, color: SpotlessColors.primary, size: 28),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -307,7 +308,7 @@ class _SimilarTracksSheetState extends State<SimilarTracksSheet> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
                                     side: isCurrent
-                                        ? const BorderSide(color: Color(0xFF1DB954), width: 1.5)
+                                        ? const BorderSide(color: SpotlessColors.primary, width: 1.5)
                                         : BorderSide.none,
                                   ),
                                   child: ListTile(
@@ -339,7 +340,7 @@ class _SimilarTracksSheetState extends State<SimilarTracksSheet> {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
-                                        color: isCurrent ? const Color(0xFF1DB954) : Colors.white,
+                                        color: isCurrent ? SpotlessColors.primary : Colors.white,
                                       ),
                                     ),
                                     subtitle: Row(
@@ -386,7 +387,7 @@ class _SimilarTracksSheetState extends State<SimilarTracksSheet> {
                                             isCurrent && player.playing
                                                 ? Icons.pause_circle_filled_rounded
                                                 : Icons.play_circle_fill_rounded,
-                                            color: const Color(0xFF1DB954),
+                                            color: SpotlessColors.primary,
                                             size: 28,
                                           ),
                                           onPressed: () async {

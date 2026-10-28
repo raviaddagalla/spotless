@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
-
 import 'debug_page.dart';
+import 'theme/spotless_colors.dart';
 
+/// Redesigned Settings screen with organized Material 3 card containers,
+/// clear typography, and complete preservation of all import, playback,
+/// covers, discovery, and diagnostic configurations.
 class SettingsPage extends StatelessWidget {
   static const route = '/settings';
 
@@ -15,21 +18,104 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      backgroundColor: SpotlessColors.background,
+      appBar: AppBar(
+        title: const Text(
+          'Settings',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+        children: const [
+          _LibrarySection(),
+          SizedBox(height: 16),
+          _ImportSection(),
+          SizedBox(height: 16),
+          _PlaybackSection(),
+          SizedBox(height: 16),
+          _CoversSection(),
+          SizedBox(height: 16),
+          _ProvidersSection(),
+          SizedBox(height: 16),
+          _DiagnosticsSection(),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  const _SettingsCard({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: SpotlessColors.surfaceContainer,
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusLg),
+        border: Border.all(
+          color: SpotlessColors.surfaceContainerHighest.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _LibrarySection(),
-          const Divider(height: 32),
-          const _ImportSection(),
-          const Divider(height: 32),
-          const _PlaybackSection(),
-          const Divider(height: 32),
-          const _CoversSection(),
-          const Divider(height: 32),
-          const _ProvidersSection(),
-          const Divider(height: 32),
-          const _DiagnosticsSection(),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(SpotlessColors.radiusSm),
+                ),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: SpotlessColors.onSurfaceMedium,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          child,
         ],
       ),
     );
@@ -98,29 +184,19 @@ class _ImportSectionState extends State<_ImportSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Import from Spotify',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        Text(
-          'Pick your Spotify playlist exports (.csv, one file per playlist). '
-          'Every song is found on YouTube, downloaded, tagged and given '
-          'lyrics + cover art automatically. No local music folder needed — '
-          're-run any time to continue where it left off.',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+    return _SettingsCard(
+      icon: Icons.cloud_download_outlined,
+      title: 'Import from Spotify',
+      subtitle: 'Pick your Spotify playlist exports (.csv, one file per playlist). '
+          'Every song is resolved on YouTube, downloaded, tagged, and assigned lyrics.',
+      child: FilledButton.icon(
+        onPressed: _busy ? null : _import,
+        icon: const Icon(Icons.file_download_outlined),
+        label: Text(_busy ? 'Importing…' : 'Import playlist CSVs…'),
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: _busy ? null : _import,
-          icon: const Icon(Icons.file_download_outlined),
-          label: Text(_busy ? 'Importing…' : 'Import playlist CSVs…'),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -146,31 +222,27 @@ class _PlaybackSectionState extends State<_PlaybackSection> {
   @override
   Widget build(BuildContext context) {
     final crossfade = _crossfade ?? true;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Playback',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Crossfade between songs'),
-          subtitle: const Text(
-            'Overlaps the next song with the last ~4 seconds of the current one.',
-          ),
-          value: crossfade,
-          onChanged: (v) async {
-            setState(() => _crossfade = v);
-            final player = context.read<PlayerController>();
-            await context.read<MusicRepository>().setCrossfadeEnabled(v);
-            player.setCrossfade(
-                v ? const Duration(seconds: 4) : Duration.zero);
-          },
+    return _SettingsCard(
+      icon: Icons.graphic_eq_rounded,
+      title: 'Playback',
+      subtitle: 'Configure audio transitions and playback behavior',
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Crossfade between songs'),
+        subtitle: const Text(
+          'Overlaps the next song with the last ~4 seconds of the current one for seamless transitions.',
+          style: TextStyle(color: SpotlessColors.onSurfaceMedium, fontSize: 12),
         ),
-      ],
+        value: crossfade,
+        onChanged: (v) async {
+          setState(() => _crossfade = v);
+          final player = context.read<PlayerController>();
+          await context.read<MusicRepository>().setCrossfadeEnabled(v);
+          player.setCrossfade(
+            v ? const Duration(seconds: 4) : Duration.zero,
+          );
+        },
+      ),
     );
   }
 }
@@ -244,48 +316,47 @@ class _LibrarySectionState extends State<_LibrarySection> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Library',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        Text(
-          'Folder containing songs.csv, sleep.csv, music/ and lyrics/. '
-          'The app needs All files access for this path.',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _root,
-          decoration: const InputDecoration(
-            labelText: 'Library folder path',
-            hintText: '/storage/emulated/0/Music/SpotlessLibrary',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            OutlinedButton.icon(
-              onPressed: _browse,
-              icon: const Icon(Icons.folder_open),
-              label: const Text('Browse'),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _scanning ? null : _saveAndScan,
-                icon: const Icon(Icons.sync),
-                label: Text(_scanning ? 'Scanning…' : 'Save & Rescan'),
+    return _SettingsCard(
+      icon: Icons.folder_copy_outlined,
+      title: 'Local Library Storage',
+      subtitle: 'Folder containing songs.csv, sleep.csv, music/ and lyrics/. '
+          'Requires storage access permissions.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _root,
+            decoration: InputDecoration(
+              labelText: 'Library folder path',
+              hintText: '/storage/emulated/0/Music/SpotlessLibrary',
+              filled: true,
+              fillColor: SpotlessColors.surfaceContainerHigh,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+                borderSide: BorderSide.none,
               ),
             ),
-          ],
-        ),
-      ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _browse,
+                icon: const Icon(Icons.folder_open),
+                label: const Text('Browse'),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _scanning ? null : _saveAndScan,
+                  icon: const Icon(Icons.sync_rounded),
+                  label: Text(_scanning ? 'Scanning…' : 'Save & Rescan'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -330,7 +401,8 @@ class _CoversSectionState extends State<_CoversSection> {
       builder: (ctx) => AlertDialog(
         title: const Text('Clear cover cache?'),
         content: const Text(
-            'Removes cached cover images (they will be re-fetched next time).'),
+          'Removes cached cover images (they will be re-fetched next time).',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -350,27 +422,27 @@ class _CoversSectionState extends State<_CoversSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Covers',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: _busy ? null : _embedAll,
-          icon: const Icon(Icons.photo_library_outlined),
-          label: const Text('Embed all covers into MP3s'),
-        ),
-        const SizedBox(height: 8),
-        TextButton.icon(
-          onPressed: _busy ? null : _clearCache,
-          icon: const Icon(Icons.delete_outline),
-          label: const Text('Clear cover cache'),
-        ),
-      ],
+    return _SettingsCard(
+      icon: Icons.photo_library_outlined,
+      title: 'Album Art & Covers',
+      subtitle: 'Manage local artwork cache and ID3 tag metadata',
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _embedAll,
+              icon: const Icon(Icons.save_alt_rounded),
+              label: const Text('Embed in MP3s'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton.icon(
+            onPressed: _busy ? null : _clearCache,
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: const Text('Clear cache'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -401,7 +473,10 @@ class _ProgressDialog extends StatelessWidget {
                 message,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                style: const TextStyle(
+                  color: SpotlessColors.onSurfaceMedium,
+                  fontSize: 12,
+                ),
               ),
             ],
           );
@@ -449,66 +524,66 @@ class _ProvidersSectionState extends State<_ProvidersSection> {
   Widget build(BuildContext context) {
     final repo = context.read<MusicRepository>();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Recommendation Providers (Spec §17, §48)',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+    return _SettingsCard(
+      icon: Icons.auto_awesome_rounded,
+      title: 'Recommendation Providers',
+      subtitle: 'Configure external recommendation APIs (Spec §17, §48). '
+          'Local offline similarity remains active as a permanent baseline.',
+      child: Column(
+        children: [
+          TextField(
+            controller: _lastFmController,
+            decoration: InputDecoration(
+              labelText: 'Last.fm API Key',
+              hintText: 'Enter API Key',
+              filled: true,
+              fillColor: SpotlessColors.surfaceContainerHigh,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+                borderSide: BorderSide.none,
               ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Configure external recommendation APIs for enhanced music discovery. '
-          'Local offline feature similarity is always active as a baseline.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.white60,
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.save_rounded),
+                tooltip: 'Save Last.fm Key',
+                onPressed: () async {
+                  await repo.setLastFmApiKey(_lastFmController.text);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Last.fm API key saved')),
+                    );
+                  }
+                },
               ),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _lastFmController,
-          decoration: InputDecoration(
-            labelText: 'Last.fm API Key',
-            hintText: 'Enter API Key',
-            border: const OutlineInputBorder(),
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.save_rounded),
-              tooltip: 'Save Last.fm Key',
-              onPressed: () async {
-                await repo.setLastFmApiKey(_lastFmController.text);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Last.fm API key saved')),
-                  );
-                }
-              },
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _qlooController,
-          decoration: InputDecoration(
-            labelText: 'Qloo API Key',
-            hintText: 'Enter API Key',
-            border: const OutlineInputBorder(),
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.save_rounded),
-              tooltip: 'Save Qloo Key',
-              onPressed: () async {
-                await repo.setQlooApiKey(_qlooController.text);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Qloo API key saved')),
-                  );
-                }
-              },
+          const SizedBox(height: 12),
+          TextField(
+            controller: _qlooController,
+            decoration: InputDecoration(
+              labelText: 'Qloo API Key',
+              hintText: 'Enter API Key',
+              filled: true,
+              fillColor: SpotlessColors.surfaceContainerHigh,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+                borderSide: BorderSide.none,
+              ),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.save_rounded),
+                tooltip: 'Save Qloo Key',
+                onPressed: () async {
+                  await repo.setQlooApiKey(_qlooController.text);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Qloo API key saved')),
+                    );
+                  }
+                },
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -519,45 +594,66 @@ class _DiagnosticsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repo = context.read<MusicRepository>();
+    final theme = Theme.of(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Diagnostics & Maintenance',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-        ),
-        const SizedBox(height: 8),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.bug_report_outlined, color: Color(0xFF1DB954)),
-          title: const Text('Open Diagnostics Screen'),
-          subtitle: const Text('View live session, playback, lyrics & ranking metrics'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const DebugPage()),
-            );
-          },
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.cleaning_services_outlined, color: Colors.amber),
-          title: const Text('Clean Discovery Cache'),
-          subtitle: const Text('Purge stale unplayed recommendation candidates (Spec §24)'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () async {
-            final cleaned = await repo.discoveryService.cleanupStaleCandidates();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Cleaned up $cleaned stale discovery candidates')),
+    return _SettingsCard(
+      icon: Icons.analytics_outlined,
+      title: 'Diagnostics & Maintenance',
+      subtitle: 'System observability, listening metrics, and recommendation maintenance',
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              Icons.bug_report_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            title: const Text('Open Diagnostics Screen'),
+            subtitle: const Text(
+              'View live session, playback, lyrics & ranking metrics (Spec §50)',
+              style: TextStyle(color: SpotlessColors.onSurfaceMedium, fontSize: 12),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right_rounded,
+              color: SpotlessColors.onSurfaceDim,
+            ),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DebugPage()),
               );
-            }
-          },
-        ),
-      ],
+            },
+          ),
+          const Divider(color: Colors.white12),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(
+              Icons.cleaning_services_outlined,
+              color: SpotlessColors.warning,
+            ),
+            title: const Text('Clean Discovery Cache'),
+            subtitle: const Text(
+              'Purge stale unplayed recommendation candidates (Spec §24)',
+              style: TextStyle(color: SpotlessColors.onSurfaceMedium, fontSize: 12),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right_rounded,
+              color: SpotlessColors.onSurfaceDim,
+            ),
+            onTap: () async {
+              final cleaned = await repo.discoveryService.cleanupStaleCandidates();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Cleaned up $cleaned stale discovery candidates',
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 }

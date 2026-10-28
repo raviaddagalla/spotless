@@ -7,10 +7,14 @@ import '../core/db/app_database.dart';
 import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
 import 'lyrics_page.dart';
+import 'theme/dynamic_theme_provider.dart';
+import 'theme/spotless_colors.dart';
 import 'widgets/album_art.dart';
 import 'widgets/rating_widget.dart';
+import 'widgets/rounded_control_button.dart';
 import 'widgets/similar_tracks_sheet.dart';
 import 'widgets/status_badge.dart';
+import 'widgets/wavy_slider.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
@@ -20,149 +24,437 @@ class NowPlayingPage extends StatefulWidget {
 }
 
 class _NowPlayingPageState extends State<NowPlayingPage> {
-  double? _dragValue;
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerController>();
+    final song = player.currentSong;
+    final dynamic_ = context.watch<DynamicThemeProvider>();
 
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      backgroundColor: SpotlessColors.background,
+      body: song == null
+          ? const Center(child: Text('Nothing playing'))
+          : Container(
+              decoration: BoxDecoration(
+                gradient: SpotlessColors.immersiveGradient(dynamic_.dominant),
+              ),
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    // ---- Top bar ----
+                    _TopBar(song: song),
+
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 16),
+
+                            // ---- Album Art ----
+                            Hero(
+                              tag: 'album-art-${song.id}',
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(
+                                      SpotlessColors.radiusLg),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: dynamic_.dominant
+                                          .withValues(alpha: 0.4),
+                                      blurRadius: 40,
+                                      offset: const Offset(0, 12),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                      SpotlessColors.radiusLg),
+                                  child: AlbumArt(
+                                    song: song,
+                                    size:
+                                        MediaQuery.of(context).size.width - 80,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 32),
+
+                            // ---- Song title / artist ----
+                            Text(
+                              song.title,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              song.artist,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(
+                                    color: SpotlessColors.onSurfaceMedium,
+                                  ),
+                            ),
+
+                            // ---- Status badges ----
+                            if (song.status == 'streamable' ||
+                                song.status == 'failed' ||
+                                song.status == 'missing')
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: StatusBadge(status: song.status),
+                              ),
+
+                            // ---- Error message ----
+                            if (player.error != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: Text(
+                                  player.error!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: SpotlessColors.error),
+                                ),
+                              ),
+
+                            const SizedBox(height: 24),
+
+                            // ---- Rating ----
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(
+                                    SpotlessColors.radiusLg),
+                              ),
+                              child: RatingWidget(songId: song.id),
+                            ),
+
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ---- Download progress ----
+                    if (player.downloading)
+                      _DownloadProgress(player: player),
+
+                    // ---- Wavy seek bar ----
+                    if (player.loading)
+                      const _LoadingBanner()
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        child: Column(
+                          children: [
+                            WavySlider(
+                              position: player.position,
+                              duration: player.duration,
+                              isPlaying: player.playing,
+                              onSeek: (d) => player.seek(d),
+                            ),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _fmt(player.position),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: SpotlessColors.onSurfaceDim,
+                                        ),
+                                  ),
+                                  Text(
+                                    _fmt(player.duration),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: SpotlessColors.onSurfaceDim,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 12),
+
+                    // ---- Playback controls (pill buttons) ----
+                    _Controls(),
+
+                    const SizedBox(height: 12),
+
+                    // ---- Bottom toggle row ----
+                    _BottomToggleRow(),
+
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+}
+
+// ====================================================================
+// Top bar
+// ====================================================================
+
+class _TopBar extends StatelessWidget {
+  final SongRow song;
+
+  const _TopBar({required this.song});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          Expanded(
+            child: Text(
+              'Now Playing',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: SpotlessColors.onSurfaceMedium,
+                  ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.lyrics_outlined, size: 22),
+            tooltip: 'Lyrics',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LyricsPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.queue_music_rounded, size: 22),
+            tooltip: 'Queue',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => const QueueSheet(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ====================================================================
+// Playback controls — PixelPlayer pill buttons
+// ====================================================================
+
+class _Controls extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerController>();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          RoundedControlButton(
+            icon: Icons.skip_previous_rounded,
+            size: 60,
+            onPressed: () => player.previous(),
+          ),
+          const SizedBox(width: 20),
+          RoundedControlButton.playPause(
+            icon: player.loading
+                ? Icons.hourglass_top_rounded
+                : player.playing
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
+            onPressed: player.loading ? null : player.togglePlayPause,
+          ),
+          const SizedBox(width: 20),
+          RoundedControlButton(
+            icon: Icons.skip_next_rounded,
+            size: 60,
+            onPressed: () => player.next(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ====================================================================
+// Bottom toggle row (shuffle, repeat, like, sleep, radio)
+// ====================================================================
+
+class _BottomToggleRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerController>();
     final song = player.currentSong;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: const Text('Now Playing'),
-        actions: [
-          if (song != null) _LikeButton(song: song),
-          if (song != null && song.status != 'downloaded')
-            IconButton(
-              icon: player.downloading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.download_outlined),
-              tooltip: 'Download',
-              onPressed: player.downloading ? null : player.downloadCurrent,
-            ),
-          IconButton(
-            icon: const Icon(Icons.queue_music),
-            tooltip: 'Queue',
-            onPressed: song == null
-                ? null
-                : () => showModalBottomSheet(
-                      context: context,
-                      backgroundColor: const Color(0xFF1E1E1E),
-                      builder: (_) => const QueueSheet(),
-                    ),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusFull),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          // Shuffle
+          _ToggleIcon(
+            icon: player.shuffleMode == ShuffleMode.smart
+                ? Icons.auto_awesome_rounded
+                : Icons.shuffle_rounded,
+            active: player.shuffleMode != ShuffleMode.off,
+            onPressed: () => player.cycleShuffleMode(),
+            tooltip: switch (player.shuffleMode) {
+              ShuffleMode.off => 'Shuffle: Off',
+              ShuffleMode.normal => 'Shuffle: Normal',
+              ShuffleMode.smart => 'Smart Shuffle',
+            },
           ),
-          IconButton(
-            icon: const Icon(Icons.lyrics_outlined),
-            tooltip: 'Lyrics',
-            onPressed: song == null
-                ? null
-                : () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const LyricsPage()),
-                    ),
+
+          // Repeat
+          _ToggleIcon(
+            icon: player.repeat == RepeatMode.one
+                ? Icons.repeat_one_rounded
+                : Icons.repeat_rounded,
+            active: player.repeat != RepeatMode.off,
+            onPressed: () {
+              final next = switch (player.repeat) {
+                RepeatMode.off => RepeatMode.all,
+                RepeatMode.all => RepeatMode.one,
+                RepeatMode.one => RepeatMode.off,
+              };
+              player.setRepeat(next);
+            },
+            tooltip: 'Repeat',
           ),
-          if (song != null)
-            IconButton(
-              icon: const Icon(Icons.sensors_rounded),
-              tooltip: 'Track Radio',
-              onPressed: () => SimilarTracksSheet.show(context, song),
-            ),
+
+          // Like
+          if (song != null) _LikeToggle(song: song),
+
+          // Sleep timer
           const _SleepTimerButton(),
+
+          // Track radio
+          if (song != null)
+            _ToggleIcon(
+              icon: Icons.sensors_rounded,
+              active: false,
+              onPressed: () => SimilarTracksSheet.show(context, song),
+              tooltip: 'Track Radio',
+            ),
         ],
       ),
-      body: song == null
-          ? const Center(child: Text('Nothing playing'))
-          : SafeArea(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        children: [
-                          Center(
-                            child: AlbumArt(
-                              song: song,
-                              size: MediaQuery.of(context).size.width - 64,
-                            ),
-                          ),
-                          const SizedBox(height: 28),
-                          Text(
-                            song.title,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 22, fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            song.artist,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontSize: 16, color: Colors.grey.shade400),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (song.status == 'streamable')
-                                const Padding(
-                                  padding: EdgeInsets.only(right: 8),
-                                  child: StatusBadge(status: 'streamable'),
-                                ),
-                              if (song.status == 'failed' ||
-                                  song.status == 'missing')
-                                const StatusBadge(status: 'missing'),
-                            ],
-                          ),
-                          if (player.error != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: Text(
-                                player.error!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.redAccent),
-                              ),
-                            ),
-                          const SizedBox(height: 20),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: RatingWidget(songId: song.id),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (player.downloading) _DownloadProgress(player: player),
-                  if (player.loading)
-                    const _LoadingBanner()
-                  else
-                    _SeekBar(
-                      position: player.position,
-                      duration: player.duration,
-                      dragValue: _dragValue,
-                      onChanged: (v) => setState(() => _dragValue = v),
-                      onChangeEnd: (v) {
-                        setState(() => _dragValue = null);
-                        player.seek(Duration(milliseconds: v.round()));
-                      },
-                    ),
-                  _Controls(),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
     );
   }
 }
+
+class _ToggleIcon extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final VoidCallback onPressed;
+  final String tooltip;
+
+  const _ToggleIcon({
+    required this.icon,
+    required this.active,
+    required this.onPressed,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton(
+      icon: Icon(icon, size: 22),
+      color: active ? scheme.primary : SpotlessColors.onSurfaceDim,
+      tooltip: tooltip,
+      onPressed: onPressed,
+    );
+  }
+}
+
+class _LikeToggle extends StatefulWidget {
+  final SongRow song;
+
+  const _LikeToggle({required this.song});
+
+  @override
+  State<_LikeToggle> createState() => _LikeToggleState();
+}
+
+class _LikeToggleState extends State<_LikeToggle> {
+  bool? _liked;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final liked = await context.read<MusicRepository>().isLiked(widget.song.id);
+    if (mounted) setState(() => _liked = liked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final liked = _liked ?? widget.song.likedAt != null;
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton(
+      icon: Icon(
+        liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+        size: 22,
+      ),
+      color: liked ? scheme.primary : SpotlessColors.onSurfaceDim,
+      tooltip: liked ? 'Unlike' : 'Like',
+      onPressed: () async {
+        final next = !liked;
+        setState(() => _liked = next);
+        await context.read<MusicRepository>().setLiked(widget.song.id, next);
+      },
+    );
+  }
+}
+
+// ====================================================================
+// Sleep Timer Button
+// ====================================================================
 
 class _SleepTimerButton extends StatelessWidget {
   const _SleepTimerButton();
@@ -178,31 +470,34 @@ class _SleepTimerButton extends StatelessWidget {
     final player = context.watch<PlayerController>();
     final active = player.sleepTimerActive;
     final remaining = player.sleepRemaining;
+    final scheme = Theme.of(context).colorScheme;
+
     return IconButton(
       icon: Stack(
         clipBehavior: Clip.none,
         children: [
           Icon(
             Icons.bedtime_outlined,
-            color: active ? const Color(0xFF1DB954) : null,
+            size: 22,
+            color: active ? scheme.primary : SpotlessColors.onSurfaceDim,
           ),
           if (remaining != null && remaining > Duration.zero)
             Positioned(
-              right: -6,
-              top: -4,
+              right: -8,
+              top: -6,
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1DB954),
+                  color: scheme.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   _fmt(remaining),
-                  style: const TextStyle(
-                    fontSize: 8,
+                  style: TextStyle(
+                    fontSize: 7,
                     fontWeight: FontWeight.w700,
-                    color: Colors.black,
+                    color: scheme.onPrimary,
                   ),
                 ),
               ),
@@ -217,7 +512,6 @@ class _SleepTimerButton extends StatelessWidget {
   void _showTimerSheet(BuildContext context, PlayerController player) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -226,7 +520,9 @@ class _SleepTimerButton extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 'Sleep timer',
-                style: Theme.of(ctx).textTheme.titleMedium
+                style: Theme.of(ctx)
+                    .textTheme
+                    .titleMedium
                     ?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
@@ -257,7 +553,7 @@ class _SleepTimerButton extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.stop_circle_outlined),
                 title: const Text('Turn off timer'),
-                textColor: Colors.redAccent,
+                textColor: SpotlessColors.error,
                 onTap: () {
                   player.cancelSleepTimer();
                   Navigator.pop(ctx);
@@ -271,46 +567,9 @@ class _SleepTimerButton extends StatelessWidget {
   }
 }
 
-class _LikeButton extends StatefulWidget {
-  final SongRow song;
-
-  const _LikeButton({required this.song});
-
-  @override
-  State<_LikeButton> createState() => _LikeButtonState();
-}
-
-class _LikeButtonState extends State<_LikeButton> {
-  bool? _liked;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final liked = await context.read<MusicRepository>().isLiked(widget.song.id);
-    if (mounted) setState(() => _liked = liked);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final liked = _liked ?? widget.song.likedAt != null;
-    return IconButton(
-      icon: Icon(
-        liked ? Icons.favorite : Icons.favorite_border,
-        color: liked ? const Color(0xFF1DB954) : null,
-      ),
-      tooltip: liked ? 'Unlike' : 'Like',
-      onPressed: () async {
-        final next = !liked;
-        setState(() => _liked = next);
-        await context.read<MusicRepository>().setLiked(widget.song.id, next);
-      },
-    );
-  }
-}
+// ====================================================================
+// Loading / Download progress
+// ====================================================================
 
 class _LoadingBanner extends StatelessWidget {
   const _LoadingBanner();
@@ -324,17 +583,23 @@ class _LoadingBanner extends StatelessWidget {
       _ => player.isStreaming ? 'Resolving from YouTube…' : 'Loading…',
     };
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(
+          SizedBox(
             width: 16,
             height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
           const SizedBox(width: 12),
-          Text(label, style: TextStyle(color: Colors.grey.shade400)),
+          Text(label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SpotlessColors.onSurfaceDim,
+                  )),
         ],
       ),
     );
@@ -350,208 +615,26 @@ class _DownloadProgress extends StatelessWidget {
   Widget build(BuildContext context) {
     final pct = (player.downloadProgress * 100).clamp(0, 100).round();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
       child: Column(
         children: [
           LinearProgressIndicator(value: player.downloadProgress),
           const SizedBox(height: 6),
           Text(
             'Downloading… $pct%',
-            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SeekBar extends StatelessWidget {
-  final Duration position;
-  final Duration duration;
-  final double? dragValue;
-  final ValueChanged<double> onChanged;
-  final ValueChanged<double> onChangeEnd;
-
-  const _SeekBar({
-    required this.position,
-    required this.duration,
-    required this.dragValue,
-    required this.onChanged,
-    required this.onChangeEnd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final maxMs = duration.inMilliseconds.toDouble().clamp(1, double.infinity).toDouble();
-    final value =
-        (dragValue ?? position.inMilliseconds.toDouble()).clamp(0, maxMs).toDouble();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          Slider(
-            value: value,
-            max: maxMs,
-            onChanged: onChanged,
-            onChangeEnd: onChangeEnd,
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(_fmt(value)),
-                Text(_fmt(maxMs)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _fmt(double ms) {
-    final d = Duration(milliseconds: ms.round());
-    final m = d.inMinutes;
-    final s = d.inSeconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
-}
-
-class _Controls extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _ShuffleButton(),
-          IconButton(
-            iconSize: 44,
-            icon: const Icon(Icons.skip_previous_rounded),
-            onPressed: () => player.previous(),
-          ),
-          Container(
-            width: 68,
-            height: 68,
-            decoration: const BoxDecoration(
-              color: Color(0xFF1DB954),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              iconSize: 40,
-              color: Colors.black,
-              icon: Icon(
-                player.loading
-                    ? Icons.hourglass_top
-                    : player.playing
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-              ),
-              onPressed: player.loading ? null : player.togglePlayPause,
-            ),
-          ),
-          IconButton(
-            iconSize: 44,
-            icon: const Icon(Icons.skip_next_rounded),
-            onPressed: () => player.next(),
-          ),
-          _RepeatButton(),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShuffleButton extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
-    final mode = player.shuffleMode;
-    return IconButton(
-      icon: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(
-            mode == ShuffleMode.smart
-                ? Icons.auto_awesome_rounded
-                : Icons.shuffle_rounded,
-            color: mode != ShuffleMode.off
-                ? const Color(0xFF1DB954)
-                : Colors.white60,
-          ),
-          if (mode == ShuffleMode.smart)
-            Positioned(
-              right: -3,
-              top: -3,
-              child: Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF1DB954),
-                  shape: BoxShape.circle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: SpotlessColors.onSurfaceDim,
                 ),
-              ),
-            ),
+          ),
         ],
       ),
-      tooltip: switch (mode) {
-        ShuffleMode.off => 'Shuffle: Off',
-        ShuffleMode.normal => 'Shuffle: Normal',
-        ShuffleMode.smart => 'Smart Shuffle: On',
-      },
-      onPressed: () => player.cycleShuffleMode(),
     );
   }
 }
 
-class _RepeatButton extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
-    final mode = player.repeat;
-    final (icon, active) = switch (mode) {
-      RepeatMode.off => (Icons.repeat, false),
-      RepeatMode.all => (Icons.repeat, true),
-      RepeatMode.one => (Icons.repeat_one, true),
-    };
-    return _IconToggle(
-      icon: icon,
-      active: active,
-      onPressed: () {
-        final next = switch (mode) {
-          RepeatMode.off => RepeatMode.all,
-          RepeatMode.all => RepeatMode.one,
-          RepeatMode.one => RepeatMode.off,
-        };
-        player.setRepeat(next);
-      },
-    );
-  }
-}
-
-class _IconToggle extends StatelessWidget {
-  final IconData icon;
-  final bool active;
-  final VoidCallback onPressed;
-
-  const _IconToggle({
-    required this.icon,
-    required this.active,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon),
-      color: active ? const Color(0xFF1DB954) : Colors.grey.shade500,
-      onPressed: onPressed,
-    );
-  }
-}
+// ====================================================================
+// Queue Sheet
+// ====================================================================
 
 class QueueSheet extends StatelessWidget {
   const QueueSheet({super.key});
@@ -560,6 +643,8 @@ class QueueSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerController>();
     final queue = player.queue;
+    final scheme = Theme.of(context).colorScheme;
+
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.6,
@@ -568,7 +653,8 @@ class QueueSheet extends StatelessWidget {
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Text(
@@ -580,51 +666,16 @@ class QueueSheet extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   if (player.shuffleMode == ShuffleMode.smart)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1DB954).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFF1DB954), width: 1),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.auto_awesome, size: 12, color: Color(0xFF1DB954)),
-                          SizedBox(width: 4),
-                          Text(
-                            'Smart Shuffle',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1DB954),
-                            ),
-                          ),
-                        ],
-                      ),
+                    _ShuffleBadge(
+                      label: 'Smart Shuffle',
+                      icon: Icons.auto_awesome,
+                      color: scheme.primary,
                     )
                   else if (player.shuffleMode == ShuffleMode.normal)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.shuffle, size: 12, color: Colors.white70),
-                          SizedBox(width: 4),
-                          Text(
-                            'Shuffle',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        ],
-                      ),
+                    _ShuffleBadge(
+                      label: 'Shuffle',
+                      icon: Icons.shuffle,
+                      color: SpotlessColors.onSurfaceMedium,
                     ),
                   const Spacer(),
                   IconButton(
@@ -656,11 +707,15 @@ class QueueSheet extends StatelessWidget {
                             child: Icon(
                               Icons.drag_handle,
                               size: 20,
-                              color: Colors.grey.shade500,
+                              color: SpotlessColors.onSurfaceDim,
                             ),
                           ),
                         ),
-                        AlbumArt(song: song, size: 40),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(
+                              SpotlessColors.radiusSm),
+                          child: AlbumArt(song: song, size: 40),
+                        ),
                       ],
                     ),
                     title: Text(
@@ -670,9 +725,7 @@ class QueueSheet extends StatelessWidget {
                       style: TextStyle(
                         fontWeight:
                             current ? FontWeight.w700 : FontWeight.w500,
-                        color: current
-                            ? const Color(0xFF1DB954)
-                            : null,
+                        color: current ? scheme.primary : null,
                       ),
                     ),
                     subtitle: Text(
@@ -692,6 +745,45 @@ class QueueSheet extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _ShuffleBadge extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _ShuffleBadge({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusFull),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

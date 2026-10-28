@@ -7,15 +7,19 @@ import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
 import 'albums_page.dart';
 import 'artists_page.dart';
-import 'liked_songs_page.dart';
 import 'now_playing_page.dart';
 import 'playlists_page.dart';
 import 'search_page.dart';
+import 'settings_page.dart';
+import 'theme/spotless_colors.dart';
+import 'widgets/album_art.dart';
+import 'widgets/gradient_top_bar.dart';
 import 'widgets/playlist_picker.dart';
 import 'widgets/rating_widget.dart';
 import 'widgets/similar_tracks_sheet.dart';
-import 'widgets/slidable_song_tile.dart';
 
+/// PixelPlayer-inspired Library screen with a horizontal tab bar
+/// (Songs / Albums / Artists / Playlists) and a Shuffle FAB.
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
 
@@ -23,16 +27,24 @@ class LibraryPage extends StatefulWidget {
   State<LibraryPage> createState() => _LibraryPageState();
 }
 
-class _LibraryPageState extends State<LibraryPage> {
-  String? _status;
+class _LibraryPageState extends State<LibraryPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tab;
   bool _offlineOnly = false;
 
   @override
   void initState() {
     super.initState();
+    _tab = TabController(length: 4, vsync: this);
     context.read<MusicRepository>().offlineOnly().then((v) {
       if (mounted) setState(() => _offlineOnly = v);
     });
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
   }
 
   @override
@@ -40,164 +52,229 @@ class _LibraryPageState extends State<LibraryPage> {
     final repo = context.watch<MusicRepository>();
     final player = context.watch<PlayerController>();
 
-    return StatusFilter(
-      status: _status,
-      setStatus: (s) => setState(() => _status = s),
-      child: Column(
+    return Scaffold(
+      // No AppBar — we use gradient top bar + TabBar.
+      body: Column(
         children: [
-          const _LibraryActions(),
-          _StatusFilterBar(
+          // ---- Gradient header with title + settings ----
+          GradientTopBar(
+            title: 'Library',
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.settings_outlined, size: 22),
+                tooltip: 'Settings',
+                onPressed: () =>
+                    Navigator.of(context).pushNamed(SettingsPage.route),
+              ),
+            ],
+          ),
+
+          // ---- Tab bar ----
+          Container(
+            color: SpotlessColors.background,
+            child: TabBar(
+              controller: _tab,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              tabs: const [
+                Tab(text: 'SONGS'),
+                Tab(text: 'ALBUMS'),
+                Tab(text: 'ARTISTS'),
+                Tab(text: 'PLAYLISTS'),
+              ],
+            ),
+          ),
+
+          // ---- Filter / sort row ----
+          _FilterRow(
             offlineOnly: _offlineOnly,
             onOfflineToggle: (v) async {
               setState(() => _offlineOnly = v);
               await repo.setOfflineOnly(v);
             },
           ),
+
+          // ---- Tab content ----
           Expanded(
-            child: StreamBuilder<List<SongRow>>(
-              stream: repo.watchSongs(
-                status: _status,
-                offlineOnly: _offlineOnly,
-              ),
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return Center(child: Text('Error: ${snap.error}'));
-                }
-                if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final songs = snap.data!;
-                if (songs.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _offlineOnly
-                          ? 'Nothing downloaded yet — tap the download icon '
-                              'on a song or search YouTube.'
-                          : 'No songs — scan your library in Settings.',
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
-                return ListView.builder(
-                  itemCount: songs.length,
-                  itemBuilder: (context, index) {
-                    final song = songs[index];
-                    return SlidableSongTile(
-                      song: song,
-                      isCurrent: player.currentSong?.id == song.id,
-                      showStatus: true,
-                      onTap: () async {
-                        await player.playQueue(songs, startIndex: index);
-                        if (context.mounted) _openNowPlaying(context);
-                      },
-                      trailing: [_SongMenu(song: song)],
-                    );
-                  },
-                );
-              },
+            child: TabBarView(
+              controller: _tab,
+              children: [
+                _SongsTab(offlineOnly: _offlineOnly),
+                const AlbumsPage(),
+                const ArtistsPage(),
+                const PlaylistsPage(),
+              ],
             ),
           ),
         ],
       ),
-    );
-  }
 
-  void _openNowPlaying(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const NowPlayingPage()),
+      // ---- Shuffle FAB ----
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'lib-shuffle',
+        onPressed: () async {
+          final songs = await repo
+              .watchSongs(offlineOnly: _offlineOnly)
+              .first;
+          if (songs.isNotEmpty && context.mounted) {
+            final shuffled = List<SongRow>.from(songs)..shuffle();
+            await player.playQueue(shuffled);
+            if (context.mounted) {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const NowPlayingPage()),
+              );
+            }
+          }
+        },
+        icon: const Icon(Icons.shuffle_rounded),
+        label: const Text('Shuffle'),
+      ),
     );
   }
 }
 
-class _LibraryActions extends StatelessWidget {
-  const _LibraryActions();
+// ====================================================================
+// Songs Tab
+// ====================================================================
+
+class _SongsTab extends StatelessWidget {
+  final bool offlineOnly;
+
+  const _SongsTab({required this.offlineOnly});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: _ActionCard(
-                  icon: Icons.queue_music,
-                  label: 'Playlists',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PlaylistsPage()),
+    final repo = context.watch<MusicRepository>();
+    final player = context.watch<PlayerController>();
+
+    return StreamBuilder<List<SongRow>>(
+      stream: repo.watchSongs(offlineOnly: offlineOnly),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(child: Text('Error: ${snap.error}'));
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final songs = snap.data!;
+        if (songs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.library_music_outlined,
+                    size: 56,
+                    color: SpotlessColors.onSurfaceDim,
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActionCard(
-                  icon: Icons.favorite,
-                  label: 'Liked Songs',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const LikedSongsPage()),
+                  const SizedBox(height: 16),
+                  Text(
+                    offlineOnly
+                        ? 'Nothing downloaded yet — tap the download icon '
+                            'on a song or search YouTube.'
+                        : 'No songs — scan your library in Settings.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: SpotlessColors.onSurfaceMedium),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: _ActionCard(
-                  icon: Icons.person_outline,
-                  label: 'Artists',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ArtistsPage()),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActionCard(
-                  icon: Icons.album_outlined,
-                  label: 'Albums',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AlbumsPage()),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          itemCount: songs.length,
+          itemBuilder: (context, index) {
+            final song = songs[index];
+            return _LibrarySongTile(
+              song: song,
+              isCurrent: player.currentSong?.id == song.id,
+              onTap: () async {
+                await player.playQueue(songs, startIndex: index);
+                if (context.mounted) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const NowPlayingPage()),
+                  );
+                }
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
 
-class _ActionCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
+// ====================================================================
+// Library Song Tile (PixelPlayer style — larger art, darker card bg)
+// ====================================================================
+
+class _LibrarySongTile extends StatelessWidget {
+  final SongRow song;
+  final bool isCurrent;
   final VoidCallback onTap;
 
-  const _ActionCard({
-    required this.icon,
-    required this.label,
+  const _LibrarySongTile({
+    required this.song,
+    required this.isCurrent,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFF1E1E1E),
-      clipBehavior: Clip.antiAlias,
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      decoration: BoxDecoration(
+        color: isCurrent
+            ? scheme.primary.withValues(alpha: 0.08)
+            : SpotlessColors.surface,
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+      ),
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Column(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
             children: [
-              Icon(icon, color: const Color(0xFF1DB954)),
-              const SizedBox(height: 6),
-              Text(label, style: Theme.of(context).textTheme.bodyMedium),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+                child: AlbumArt(song: song, size: 52),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: isCurrent ? scheme.primary : null,
+                        fontWeight:
+                            isCurrent ? FontWeight.w700 : FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: SpotlessColors.onSurfaceMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _SongMenu(song: song),
             ],
           ),
         ),
@@ -205,6 +282,47 @@ class _ActionCard extends StatelessWidget {
     );
   }
 }
+
+// ====================================================================
+// Filter row
+// ====================================================================
+
+class _FilterRow extends StatelessWidget {
+  final bool offlineOnly;
+  final ValueChanged<bool> onOfflineToggle;
+
+  const _FilterRow({
+    required this.offlineOnly,
+    required this.onOfflineToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: [
+          FilterChip(
+            avatar: Icon(
+              offlineOnly ? Icons.cloud_off : Icons.cloud_outlined,
+              size: 16,
+            ),
+            label: const Text('Offline'),
+            selected: offlineOnly,
+            tooltip: 'Show only downloaded songs',
+            onSelected: onOfflineToggle,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ====================================================================
+// Song overflow menu (same actions as before, restyled)
+// ====================================================================
 
 class _SongMenu extends StatelessWidget {
   final SongRow song;
@@ -215,7 +333,7 @@ class _SongMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = context.read<PlayerController>();
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert),
+      icon: Icon(Icons.more_vert, color: SpotlessColors.onSurfaceDim),
       onSelected: (value) async {
         switch (value) {
           case 'play':
@@ -271,7 +389,6 @@ class _SongMenu extends StatelessWidget {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF222222),
         title: Text(
           'Rate "${song.title}"',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -291,7 +408,6 @@ class _SongMenu extends StatelessWidget {
                 messenger.showSnackBar(
                   SnackBar(
                     content: Text('Rated "${song.title}" $r/10!'),
-                    behavior: SnackBarBehavior.floating,
                   ),
                 );
               },
@@ -348,59 +464,6 @@ class _SongMenu extends StatelessWidget {
         );
       }
     }
-  }
-}
-
-class _StatusFilterBar extends StatelessWidget {
-  final bool offlineOnly;
-  final ValueChanged<bool> onOfflineToggle;
-
-  const _StatusFilterBar({
-    required this.offlineOnly,
-    required this.onOfflineToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = StatusFilter.of(context)?.status;
-    final chips = <(String?, String)>[
-      (null, 'All'),
-      (SongStatus.downloaded.name, 'Downloaded'),
-      (SongStatus.streamable.name, 'Streamable'),
-      (SongStatus.missing.name, 'Missing'),
-      (SongStatus.failed.name, 'Failed'),
-    ];
-    return SizedBox(
-      height: 52,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        children: [
-          for (final (value, label) in chips)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(label),
-                selected: selected == value,
-                onSelected: (_) => StatusFilter.of(context)?.setStatus(value),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              avatar: Icon(
-                offlineOnly ? Icons.cloud_off : Icons.cloud_outlined,
-                size: 18,
-              ),
-              label: const Text('Offline'),
-              selected: offlineOnly,
-              tooltip: 'Show only downloaded songs',
-              onSelected: onOfflineToggle,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

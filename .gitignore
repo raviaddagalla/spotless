@@ -40,3 +40,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.log
+
+# Reference materials
+PixelPlayer-master.zip
+_pixelplayer_ref/

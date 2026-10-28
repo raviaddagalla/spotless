@@ -12,6 +12,9 @@ import 'core/youtube/yt_bridge.dart';
 import 'ui/home_shell.dart';
 import 'ui/now_playing_page.dart';
 import 'ui/settings_page.dart';
+import 'ui/theme/dynamic_theme_provider.dart';
+import 'ui/theme/spotless_colors.dart';
+import 'ui/theme/spotless_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,11 +41,18 @@ void main() {
             : Duration.zero,
       );
 
+      final dynamicTheme = DynamicThemeProvider(
+        repo: repo,
+        player: controller,
+      );
+
       runApp(
         MultiProvider(
           providers: [
             Provider<MusicRepository>.value(value: repo),
             ChangeNotifierProvider<PlayerController>.value(value: controller),
+            ChangeNotifierProvider<DynamicThemeProvider>.value(
+                value: dynamicTheme),
           ],
           child: const SpotlessApp(),
         ),
@@ -65,8 +75,8 @@ class StartupError extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: SpotlessTheme.of(),
       home: Scaffold(
-        backgroundColor: const Color(0xFF121212),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -74,7 +84,7 @@ class StartupError extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.error_outline,
-                    color: Color(0xFF1DB954), size: 48),
+                    color: SpotlessColors.error, size: 48),
                 const SizedBox(height: 16),
                 const Text('Spotless failed to start',
                     style:
@@ -99,18 +109,12 @@ class SpotlessApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dynamicTheme = context.watch<DynamicThemeProvider>();
+
     return MaterialApp(
       title: 'Spotless',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1DB954),
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        useMaterial3: true,
-      ),
+      theme: SpotlessTheme.of(colorScheme: dynamicTheme.scheme),
       home: const HomeShell(),
       routes: {
         SettingsPage.route: (_) => const SettingsPage(),
@@ -119,3 +123,4 @@ class SpotlessApp extends StatelessWidget {
     );
   }
 }
+

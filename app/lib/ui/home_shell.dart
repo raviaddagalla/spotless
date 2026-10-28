@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
-import 'debug_page.dart';
-import 'discovery_page.dart';
 import 'home_page.dart';
 import 'library_page.dart';
 import 'search_page.dart';
-import 'settings_page.dart';
 import 'widgets/mini_player.dart';
 
+/// Root shell with a PixelPlayer-inspired 3-tab bottom navigation bar
+/// (Home, Search, Library) and a persistent [MiniPlayer] above it.
+///
+/// The AppBar is removed from the shell; each page owns its own header
+/// (gradient top bar or collapsing toolbar).
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -20,18 +22,15 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _pages = [
     HomePage(),
-    DiscoveryPage(),
-    LibraryPage(),
     SearchPage(),
+    LibraryPage(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: IndexedStack(index: _tab, children: _pages),
-      ),
+      // No AppBar — each page provides its own header.
+      body: IndexedStack(index: _tab, children: _pages),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -42,47 +41,20 @@ class _HomeShellState extends State<HomeShell> {
             destinations: const [
               NavigationDestination(
                 icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
+                selectedIcon: Icon(Icons.home_rounded),
                 label: 'Home',
               ),
               NavigationDestination(
-                icon: Icon(Icons.travel_explore_outlined),
-                selectedIcon: Icon(Icons.travel_explore),
-                label: 'Discover',
+                icon: Icon(Icons.search_outlined),
+                selectedIcon: Icon(Icons.search_rounded),
+                label: 'Search',
               ),
               NavigationDestination(
                 icon: Icon(Icons.library_music_outlined),
-                selectedIcon: Icon(Icons.library_music),
+                selectedIcon: Icon(Icons.library_music_rounded),
                 label: 'Library',
               ),
-              NavigationDestination(
-                icon: Icon(Icons.search_outlined),
-                selectedIcon: Icon(Icons.search),
-                label: 'Search',
-              ),
             ],
-          ),
-        ],
-      ),
-      appBar: AppBar(
-        title: const Text('Spotless'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.bug_report_outlined),
-            tooltip: 'Diagnostics & Debug',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DebugPage()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-            onPressed: () {
-              Navigator.of(context)
-                  .pushNamed(SettingsPage.route);
-            },
           ),
         ],
       ),

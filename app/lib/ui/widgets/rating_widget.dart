@@ -127,7 +127,7 @@ class _RatingWidgetState extends State<RatingWidget> {
             Text(
               rating != null ? '$rating / 10 • ${_ratingLabel(rating)}' : 'Tap star to rate (1–10)',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: rating != null ? const Color(0xFF1DB954) : Colors.white38,
+                    color: rating != null ? Theme.of(context).colorScheme.primary : Colors.white38,
                     fontWeight: FontWeight.w600,
                   ),
             ),

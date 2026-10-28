@@ -5,13 +5,24 @@ import 'package:provider/provider.dart';
 
 import '../../core/models/lyrics.dart';
 import '../../core/state/player_controller.dart';
+import '../theme/spotless_colors.dart';
 
-/// Auto-scrolling synced lyrics view (Spotify style): the active line is
-/// centered and highlighted; plain text falls back to a static list.
+/// Auto-scrolling synced lyrics view, PixelPlayer-inspired:
+/// - Large bold text (22sp active, 20sp inactive)
+/// - Active line: full white, bold weight
+/// - Inactive lines: semi-transparent, regular weight
+/// - Smooth spring scroll centering the active line
+///
+/// Supports synced mode (timestamp-driven) and static mode (plain text).
 class SyncedLyricsView extends StatefulWidget {
   final Lyrics lyrics;
+  final bool showSynced;
 
-  const SyncedLyricsView({super.key, required this.lyrics});
+  const SyncedLyricsView({
+    super.key,
+    required this.lyrics,
+    this.showSynced = true,
+  });
 
   @override
   State<SyncedLyricsView> createState() => _SyncedLyricsViewState();
@@ -23,7 +34,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
   late final PlayerController _player;
   bool _subscribed = false;
 
-  static const double _lineHeight = 46;
+  static const double _lineHeight = 64;
 
   @override
   void didChangeDependencies() {
@@ -72,42 +83,51 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     if (idx == _active) return;
     setState(() => _active = idx);
     if (idx >= 0 && _scroll.hasClients) {
-      final target = max(0.0, idx * _lineHeight - (240 / 2 - _lineHeight / 2));
+      final viewportHeight = _scroll.position.viewportDimension;
+      final target =
+          max(0.0, idx * _lineHeight - (viewportHeight / 2 - _lineHeight / 2));
       final maxExtent = _scroll.position.maxScrollExtent;
       _scroll.animateTo(
         target.clamp(0.0, maxExtent),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.lyrics.synced) {
+    // ---- Static (plain text) mode ----
+    if (!widget.lyrics.synced || !widget.showSynced) {
       return ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
         children: widget.lyrics.plainText.split('\n').map((l) {
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
               l,
-              style: const TextStyle(fontSize: 16, height: 1.5),
+              style: const TextStyle(
+                fontSize: 20,
+                height: 1.6,
+                color: Colors.white70,
+              ),
             ),
           );
         }).toList(),
       );
     }
 
+    // ---- Synced mode ----
     final lines = widget.lyrics.lines;
     return ListView.builder(
       controller: _scroll,
-      padding: const EdgeInsets.symmetric(vertical: 120),
+      padding: const EdgeInsets.symmetric(vertical: 100),
       itemCount: lines.length,
       itemExtent: _lineHeight,
       itemBuilder: (context, index) {
         final active = index == _active;
-        final upNext = _active >= 0 && (index == _active + 1 || index == _active + 2);
+        final upNext = _active >= 0 &&
+            (index == _active + 1 || index == _active + 2);
         return InkWell(
           onTap: () {
             _player.seek(lines[index].time);
@@ -116,22 +136,24 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
           splashColor: Colors.white10,
           highlightColor: Colors.transparent,
           child: AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
             style: TextStyle(
-              fontSize: 16,
-              fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+              fontSize: active ? 22 : 20,
+              fontWeight: active ? FontWeight.w800 : FontWeight.w400,
               color: active
-                  ? const Color(0xFF1DB954)
+                  ? SpotlessColors.onSurface
                   : upNext
-                      ? Colors.white
-                      : Colors.white38,
+                      ? SpotlessColors.onSurfaceMedium
+                      : SpotlessColors.onSurfaceDim.withValues(alpha: 0.5),
+              height: 1.4,
             ),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Align(
+                alignment: Alignment.centerLeft,
                 child: Text(
                   lines[index].text,
-                  textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),

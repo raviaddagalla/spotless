@@ -7,9 +7,11 @@ import '../core/db/app_database.dart';
 import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
 import 'now_playing_page.dart';
+import 'theme/spotless_colors.dart';
 import 'widgets/song_tile.dart';
 
 enum SearchMode { local, youtube }
+
 class SearchPage extends StatefulWidget {
   final String? initialQuery;
 
@@ -117,48 +119,84 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: _query,
-          autofocus: widget.initialQuery == null,
-          textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(
-            hintText: 'Search songs, artists or lyrics',
-            border: InputBorder.none,
-          ),
-          onSubmitted: (_) => _runSearch(),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _runSearch,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SegmentedButton<SearchMode>(
-              segments: const [
-                ButtonSegment(
-                  value: SearchMode.local,
-                  label: Text('Local'),
-                  icon: Icon(Icons.music_note),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ---- Rounded search bar ----
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: SpotlessColors.surface,
+                  borderRadius:
+                      BorderRadius.circular(SpotlessColors.radiusFull),
+                  border: Border.all(
+                    color: SpotlessColors.outline,
+                    width: 0.5,
+                  ),
                 ),
-                ButtonSegment(
-                  value: SearchMode.youtube,
-                  label: Text('YouTube'),
-                  icon: Icon(Icons.download_outlined),
+                child: TextField(
+                  controller: _query,
+                  autofocus: widget.initialQuery == null,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: 'Search songs, artists or lyrics',
+                    hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                      color: SpotlessColors.onSurfaceDim,
+                    ),
+                    prefixIcon: Icon(Icons.search_rounded,
+                        color: SpotlessColors.onSurfaceMedium),
+                    suffixIcon: _query.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () {
+                              _query.clear();
+                              setState(() {
+                                _searched = false;
+                                _localResults = [];
+                                _results = [];
+                              });
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  onSubmitted: (_) => _runSearch(),
+                  onChanged: (_) => setState(() {}),
                 ),
-              ],
-              selected: {_mode},
-              onSelectionChanged: (s) => _switchMode(s.first),
+              ),
             ),
-          ),
-          Expanded(child: _buildBody()),
-        ],
+
+            // ---- Mode toggle ----
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  _ModePill(
+                    label: 'Local',
+                    icon: Icons.music_note_rounded,
+                    selected: _mode == SearchMode.local,
+                    onTap: () => _switchMode(SearchMode.local),
+                  ),
+                  const SizedBox(width: 8),
+                  _ModePill(
+                    label: 'YouTube',
+                    icon: Icons.download_outlined,
+                    selected: _mode == SearchMode.youtube,
+                    onTap: () => _switchMode(SearchMode.youtube),
+                  ),
+                ],
+              ),
+            ),
+
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }
@@ -201,7 +239,8 @@ class _SearchPageState extends State<SearchPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.search_off, size: 40),
+                Icon(Icons.search_off, size: 40,
+                    color: SpotlessColors.onSurfaceDim),
                 const SizedBox(height: 12),
                 Text(
                   'No local songs found for "${_query.text.trim()}".',
@@ -245,12 +284,12 @@ class _SearchPageState extends State<SearchPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search_off, size: 40),
+              Icon(Icons.search_off, size: 40,
+                  color: SpotlessColors.onSurfaceDim),
               const SizedBox(height: 12),
               Text(
                 'No results for "${_query.text.trim()}". '
-                'YouTube may be throttling this device/network — '
-                'retry in a bit or try a different query.',
+                'YouTube may be throttling — retry or try a different query.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
@@ -266,48 +305,10 @@ class _SearchPageState extends State<SearchPage> {
       itemBuilder: (context, index) {
         final r = _results[index];
         final song = _toSong(r);
-        return ListTile(
-          leading: _thumb(r['thumbnail'] as String?),
-          title: Text(
-            (r['title'] as String?) ?? 'Unknown',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            '${r['channel'] ?? ''} · ${_fmt((r['duration'] as num?)?.toInt())}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.download_outlined),
-                tooltip: 'Download',
-                onPressed: () async {
-                  try {
-                    await player.downloadSong(song);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Download finished')),
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Download failed: $e')),
-                      );
-                    }
-                  }
-                },
-              ),
-            ],
-          ),
+        return _YTResultTile(
+          result: r,
+          song: song,
           onTap: () async {
-            // Stream the not-yet-downloaded song straight from YouTube;
-            // the download button remains the way to save it offline.
-            final player = context.read<PlayerController>();
             await player.playQueue([song]);
             if (context.mounted) {
               Navigator.of(context).push(
@@ -315,30 +316,170 @@ class _SearchPageState extends State<SearchPage> {
               );
             }
           },
+          onDownload: () async {
+            try {
+              await player.downloadSong(song);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Download finished')),
+                );
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Download failed: $e')),
+                );
+              }
+            }
+          },
         );
       },
     );
   }
+}
 
-  Widget _thumb(String? url) {
-    if (url == null || url.isEmpty) {
-      return const SizedBox(
-        width: 48,
-        height: 48,
-        child: Icon(Icons.music_note),
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: Image.network(
-        url,
-        width: 48,
-        height: 48,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => const SizedBox(
-          width: 48,
-          height: 48,
-          child: Icon(Icons.music_note),
+// ====================================================================
+// Mode toggle pill
+// ====================================================================
+
+class _ModePill extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ModePill({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.primary.withValues(alpha: 0.18)
+              : SpotlessColors.surface,
+          borderRadius: BorderRadius.circular(SpotlessColors.radiusFull),
+          border: Border.all(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.4)
+                : SpotlessColors.outline,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? scheme.primary : SpotlessColors.onSurfaceDim,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: selected
+                        ? scheme.primary
+                        : SpotlessColors.onSurfaceMedium,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ====================================================================
+// YouTube result tile
+// ====================================================================
+
+class _YTResultTile extends StatelessWidget {
+  final Map<String, dynamic> result;
+  final SongRow song;
+  final VoidCallback onTap;
+  final VoidCallback onDownload;
+
+  const _YTResultTile({
+    required this.result,
+    required this.song,
+    required this.onTap,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final thumb = result['thumbnail'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      decoration: BoxDecoration(
+        color: SpotlessColors.surface,
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius:
+                    BorderRadius.circular(SpotlessColors.radiusSm),
+                child: thumb != null && thumb.isNotEmpty
+                    ? Image.network(
+                        thumb,
+                        width: 52,
+                        height: 52,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            const _PlaceholderThumb(),
+                      )
+                    : const _PlaceholderThumb(),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (result['title'] as String?) ?? 'Unknown',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${result['channel'] ?? ''} · ${_fmt((result['duration'] as num?)?.toInt())}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: SpotlessColors.onSurfaceMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.download_outlined, size: 22),
+                tooltip: 'Download',
+                color: SpotlessColors.onSurfaceMedium,
+                onPressed: onDownload,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -352,7 +493,24 @@ class _SearchPageState extends State<SearchPage> {
   }
 }
 
-/// Idle state before a search: recent query chips (F6).
+class _PlaceholderThumb extends StatelessWidget {
+  const _PlaceholderThumb();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      color: SpotlessColors.surfaceTop,
+      child: Icon(Icons.music_note, color: SpotlessColors.onSurfaceDim),
+    );
+  }
+}
+
+// ====================================================================
+// Search idle state with recent history
+// ====================================================================
+
 class _SearchIdle extends StatefulWidget {
   final SearchMode mode;
   final ValueChanged<String> onHistoryTap;
@@ -380,11 +538,25 @@ class _SearchIdleState extends State<_SearchIdle> {
         final history = snap.data ?? const [];
         if (history.isEmpty) {
           return Center(
-            child: Text(
-              widget.mode == SearchMode.local
-                  ? 'Search your library — songs, artists or lyrics.'
-                  : 'Search YouTube — tap a result to stream it, '
-                      'or use the download icon to save it offline.',
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.search_rounded, size: 48,
+                      color: SpotlessColors.onSurfaceDim),
+                  const SizedBox(height: 12),
+                  Text(
+                    widget.mode == SearchMode.local
+                        ? 'Search your library — songs, artists or lyrics.'
+                        : 'Search YouTube — tap to stream, download icon to save.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: SpotlessColors.onSurfaceMedium,
+                        ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -395,10 +567,7 @@ class _SearchIdleState extends State<_SearchIdle> {
               children: [
                 Text(
                   'Recent searches',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const Spacer(),
                 TextButton(
@@ -420,7 +589,8 @@ class _SearchIdleState extends State<_SearchIdle> {
             for (final q in history)
               ListTile(
                 dense: true,
-                leading: const Icon(Icons.history, size: 20),
+                leading: Icon(Icons.history, size: 20,
+                    color: SpotlessColors.onSurfaceDim),
                 title: Text(q, maxLines: 1, overflow: TextOverflow.ellipsis),
                 onTap: () => widget.onHistoryTap(q),
               ),
