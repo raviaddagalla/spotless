@@ -13,6 +13,7 @@
         android:label="Spotless"
         android:name="com.chaquo.python.android.PyApplication"
         android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true"
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"

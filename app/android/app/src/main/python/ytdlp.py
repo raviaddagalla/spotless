@@ -1,8 +1,10 @@
+import glob
 import json
 import os
+import re
 import time
-import urllib.request
 import urllib.parse
+import urllib.request
 
 import yt_dlp
 from mutagen import File as MutagenFile
@@ -10,8 +12,14 @@ from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, ID3, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4Cover
 
-PROGRESS_FILE = os.path.join(os.environ["HOME"], "ytdlp_progress.txt")
-DEBUG_FILE = os.path.join(os.environ["HOME"], "ytdlp_debug.log")
+HOME = os.environ.get("HOME") or os.path.expanduser("~")
+PROGRESS_FILE = os.path.join(HOME, "ytdlp_progress.txt")
+DEBUG_FILE = os.path.join(HOME, "ytdlp_debug.log")
+CANCEL_FILE = os.path.join(HOME, "ytdlp_cancel.flag")
+
+
+class DownloadCancelled(Exception):
+    pass
 
 
 def _log(msg):
@@ -24,6 +32,33 @@ def _log(msg):
 
 def _dumps(value):
     return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _clear_cancel():
+    try:
+        os.remove(CANCEL_FILE)
+    except OSError:
+        pass
+
+
+def cancel_download():
+    try:
+        with open(CANCEL_FILE, "w") as f:
+            f.write("cancel")
+    except Exception:
+        pass
+    try:
+        with open(PROGRESS_FILE, "w") as f:
+            f.write("cancelled|0|0")
+    except Exception:
+        pass
+    return _dumps(True)
+
+
+def _check_cancel():
+    if os.path.exists(CANCEL_FILE):
+        raise DownloadCancelled("cancelled")
+
 
 BASE_OPTS = {
     "quiet": True,
@@ -48,6 +83,7 @@ BASE_OPTS = {
 
 def _progress_hook(d):
     if d.get("status") == "downloading":
+        _check_cancel()
         total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
         done = d.get("downloaded_bytes") or 0
         pct = (done * 100.0 / total) if total else 0.0
@@ -57,6 +93,7 @@ def _progress_hook(d):
         except Exception:
             pass
     elif d.get("status") == "finished":
+        _check_cancel()
         try:
             with open(PROGRESS_FILE, "w") as f:
                 f.write("100.0|0|0")
@@ -136,6 +173,16 @@ def extract(query):
     })
 
 
+def _thumbnail(entry):
+    thumb = entry.get("thumbnail")
+    thumbs = entry.get("thumbnails") or []
+    if not thumb and thumbs:
+        thumb = thumbs[-1].get("url") if isinstance(thumbs[-1], dict) else None
+    if not thumb and entry.get("id"):
+        thumb = "https://i.ytimg.com/vi/%s/mqdefault.jpg" % entry["id"]
+    return thumb
+
+
 def search(query, max_results=10):
     _log("search start: %r x%d" % (query, int(max_results)))
     opts = dict(BASE_OPTS)
@@ -155,21 +202,13 @@ def search(query, max_results=10):
     for e in (info.get("entries") or [])[: max(int(max_results), 1)]:
         if not e:
             continue
-        # Flat entries don't have a top-level thumbnail, but do carry a
-        # `thumbnails` list; fall back to a deterministic i.ytimg.com URL.
-        thumb = e.get("thumbnail")
-        thumbs = e.get("thumbnails") or []
-        if not thumb and thumbs:
-            thumb = thumbs[-1].get("url") if isinstance(thumbs[-1], dict) else None
-        if not thumb and e.get("id"):
-            thumb = "https://i.ytimg.com/vi/%s/mqdefault.jpg" % e["id"]
         results.append(
             {
                 "id": e.get("id"),
                 "title": e.get("title"),
                 "duration": e.get("duration"),
-                "thumbnail": thumb,
-                "channel": e.get("channel"),
+                "thumbnail": _thumbnail(e),
+                "channel": e.get("channel") or e.get("uploader"),
             }
         )
     return _dumps(results)
@@ -189,8 +228,16 @@ _PREFERRED_TERMS = [
 ]
 
 _OFFICIAL_CHANNEL_HINTS = [
-    "vevo", "records", "music", "official", "entertainment",
+    "vevo", "records", "music", "official", "entertainment", "topic",
 ]
+
+
+def _phrase_in(phrase, text):
+    """Whole-phrase match so 'live' does not match 'alive'/'delivery'."""
+    if not phrase or not text:
+        return False
+    pattern = r"(?<![a-z0-9])" + re.escape(phrase.lower()) + r"(?![a-z0-9])"
+    return re.search(pattern, text.lower()) is not None
 
 
 def _score_candidate(entry, artist, title, expected_duration_s=None):
@@ -198,50 +245,57 @@ def _score_candidate(entry, artist, title, expected_duration_s=None):
     studio recording. Higher = better."""
     score = 50.0
     yt_title = (entry.get("title") or "").lower()
-    channel = (entry.get("channel") or "").lower()
+    channel = (entry.get("channel") or entry.get("uploader") or "").lower()
     duration = entry.get("duration")
 
-    # Penalize unwanted versions.
+    # Penalize unwanted versions. Whole-phrase matching avoids false hits
+    # such as "Alive" matching the "live" penalty.
     for term in _PENALIZED_TERMS:
-        if term in yt_title:
+        if _phrase_in(term, yt_title):
             score -= 20
 
-    # Bonus for preferred terms.
-    for term in _PREFERRED_TERMS:
-        if term in yt_title:
-            score += 15
+    # Bonus for preferred terms, without double-counting "audio" inside
+    # "official audio" (the old scorer added +30 for that combination).
+    if _phrase_in("official audio", yt_title):
+        score += 30
+    elif _phrase_in("official video", yt_title) or _phrase_in(
+        "official music", yt_title
+    ):
+        score += 22
+    elif _phrase_in("audio", yt_title):
+        score += 10
 
     # Bonus for official-looking channels.
     for hint in _OFFICIAL_CHANNEL_HINTS:
-        if hint in channel:
+        if _phrase_in(hint, channel):
             score += 10
             break
 
     # Artist name appears in channel name.
-    if artist and artist.lower() in channel:
+    if artist and _phrase_in(artist, channel):
         score += 15
 
     # Artist name appears in video title.
-    if artist and artist.lower() in yt_title:
+    if artist and _phrase_in(artist, yt_title):
         score += 5
 
     # Title appears in video title.
-    if title and title.lower() in yt_title:
-        score += 5
+    if title and _phrase_in(title, yt_title):
+        score += 10
 
     # Duration matching.
     if expected_duration_s and duration:
         diff = abs(int(duration) - int(expected_duration_s))
         if diff <= 5:
-            score += 10
+            score += 12
         elif diff <= 15:
-            score += 5
+            score += 6
         elif diff <= 30:
             pass  # neutral
         elif diff <= 60:
-            score -= 10
+            score -= 12
         else:
-            score -= 25
+            score -= 30
 
     # Heavily penalize very short (< 30s) or very long (> 15min) results.
     if duration:
@@ -256,12 +310,11 @@ def _score_candidate(entry, artist, title, expected_duration_s=None):
 def canonical_search(artist, title, expected_duration_s=None, max_candidates=8):
     """Search YouTube for the best canonical (studio) recording.
     Returns the top result as a dict with id/title/duration/channel/thumbnail/score,
-    or {} if nothing is found."""
+    or {} if nothing is found or the best candidate scores too low."""
     _log("canonical_search: %r - %r (dur=%s)" % (artist, title, expected_duration_s))
-    # Try multiple query strategies.
     queries = [
         "%s %s official audio" % (artist, title),
-        "%s %s audio" % (artist, title),
+        "%s - %s" % (artist, title),
         "%s %s" % (artist, title),
     ]
     all_candidates = []
@@ -280,12 +333,6 @@ def canonical_search(artist, title, expected_duration_s=None, max_candidates=8):
                 if e["id"] in seen_ids:
                     continue
                 seen_ids.add(e["id"])
-                thumb = e.get("thumbnail")
-                thumbs = e.get("thumbnails") or []
-                if not thumb and thumbs:
-                    thumb = thumbs[-1].get("url") if isinstance(thumbs[-1], dict) else None
-                if not thumb and e.get("id"):
-                    thumb = "https://i.ytimg.com/vi/%s/mqdefault.jpg" % e["id"]
                 s = _score_candidate(
                     e, artist, title,
                     expected_duration_s=int(expected_duration_s) if expected_duration_s else None,
@@ -294,8 +341,8 @@ def canonical_search(artist, title, expected_duration_s=None, max_candidates=8):
                     "id": e["id"],
                     "title": e.get("title"),
                     "duration": e.get("duration"),
-                    "channel": e.get("channel"),
-                    "thumbnail": thumb,
+                    "channel": e.get("channel") or e.get("uploader"),
+                    "thumbnail": _thumbnail(e),
                     "score": s,
                 })
         except Exception as ex:
@@ -306,12 +353,19 @@ def canonical_search(artist, title, expected_duration_s=None, max_candidates=8):
         return _dumps({})
     all_candidates.sort(key=lambda c: c["score"], reverse=True)
     best = all_candidates[0]
+    # A low score means we only found karaoke/live/cover/short clips. It is
+    # better to fail and let the user see the error than to download the
+    # wrong recording.
+    if best["score"] < 35:
+        _log("canonical_search: best score too low (%.1f)" % best["score"])
+        return _dumps({})
     _log("canonical_search: best=%s score=%.1f title=%r" % (best["id"], best["score"], best["title"]))
     return _dumps(best)
 
 
 def download(url, outdir, base_name):
     _log("download start: %r -> %s" % (url, outdir))
+    _clear_cancel()
     opts = dict(BASE_OPTS)
     opts["format"] = "bestaudio/best"
     opts["outtmpl"] = os.path.join(outdir, base_name + ".%(ext)s")
@@ -324,23 +378,45 @@ def download(url, outdir, base_name):
         if info and "entries" in info:
             entries = [e for e in (info.get("entries") or []) if e]
             info = entries[0] if entries else None
+    except DownloadCancelled:
+        _cleanup_partial(outdir, base_name)
+        _log("download cancelled")
+        return _dumps({"path": None, "cancelled": True})
     except Exception as e:
         _log("download error: %r" % (e,))
+        _cleanup_partial(outdir, base_name)
         raise
     prefix = base_name + "."
-    for name in sorted(os.listdir(outdir)):
-        if name.startswith(prefix) and name != base_name:
-            _log("download done: %s" % name)
-            return _dumps({
-                "path": os.path.join(outdir, name),
-                "ext": name.rsplit(".", 1)[-1],
-                "title": (info or {}).get("title"),
-                "duration": (info or {}).get("duration"),
-                "id": (info or {}).get("id"),
-                "thumbnail": (info or {}).get("thumbnail"),
-            })
+    matches = sorted(
+        name for name in os.listdir(outdir)
+        if name.startswith(prefix) and not name.endswith(".part")
+    )
+    if matches:
+        name = matches[0]
+        _log("download done: %s" % name)
+        return _dumps({
+            "path": os.path.join(outdir, name),
+            "ext": name.rsplit(".", 1)[-1],
+            "title": (info or {}).get("title"),
+            "duration": (info or {}).get("duration"),
+            "id": (info or {}).get("id"),
+            "thumbnail": (info or {}).get("thumbnail"),
+        })
     _log("download done: NO FILE FOUND")
     return _dumps({"path": None})
+
+
+def _cleanup_partial(outdir, base_name):
+    for pattern in (
+        os.path.join(outdir, base_name + ".*.part"),
+        os.path.join(outdir, base_name + ".part"),
+        os.path.join(outdir, base_name + ".*.ytdl"),
+    ):
+        try:
+            for path in glob.glob(pattern):
+                os.remove(path)
+        except Exception:
+            pass
 
 
 def embed_cover(path, image_bytes, mime="image/jpeg"):
@@ -372,7 +448,7 @@ def embed_cover(path, image_bytes, mime="image/jpeg"):
     return _dumps(True)
 
 
-def set_tags(path, title, artist):
+def set_tags(path, title, artist, album=None):
     if str(path).lower().endswith(".mp3"):
         try:
             audio = EasyID3(str(path))
@@ -382,6 +458,8 @@ def set_tags(path, title, artist):
             audio["title"] = str(title)
         if artist:
             audio["artist"] = str(artist)
+        if album:
+            audio["album"] = str(album)
         audio.save(str(path))
     else:
         mp4 = MP4(str(path))
@@ -389,6 +467,8 @@ def set_tags(path, title, artist):
             mp4.tags["\xa9nam"] = [str(title)]
         if artist:
             mp4.tags["\xa9ART"] = [str(artist)]
+        if album:
+            mp4.tags["\xa9alb"] = [str(album)]
         mp4.save()
     return _dumps(True)
 
@@ -406,10 +486,61 @@ def _lrclib_get(url):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _norm_text(value):
+    value = (value or "").lower()
+    value = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", value)
+    value = re.sub(r"[^a-z0-9\u00c0-\uffff]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _pick_lyrics(entries, artist, title, duration_s):
+    """Pick the best LRCLIB entry, never an arbitrary first result."""
+    if not entries:
+        return None
+    expected = float(duration_s) if duration_s else None
+    artist_n = _norm_text(artist)
+    title_n = _norm_text(title)
+    best = None
+    best_score = -1.0
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        plain = (e.get("plainLyrics") or "").strip()
+        synced = (e.get("syncedLyrics") or "").strip()
+        if not plain and not synced:
+            continue
+        entry_duration = e.get("duration")
+        if expected and entry_duration:
+            diff = abs(float(entry_duration) - expected)
+            # A live/cover/remix is usually 20-120s longer/shorter. Reject
+            # blatant mismatches rather than applying an arbitrary offset.
+            if diff > 10:
+                continue
+        else:
+            diff = 0.0
+        e_title = _norm_text(e.get("trackName"))
+        e_artist = _norm_text(e.get("artistName"))
+        score = 0.0
+        if title_n and e_title == title_n:
+            score += 50
+        elif title_n and (title_n in e_title or e_title in title_n):
+            score += 25
+        if artist_n and e_artist == artist_n:
+            score += 40
+        elif artist_n and (artist_n in e_artist or e_artist in artist_n):
+            score += 20
+        score += max(0.0, 15.0 - diff * 1.5)
+        if synced:
+            score += 10
+        # Prefer community entries with a closer duration.
+        if score > best_score:
+            best_score = score
+            best = e
+    return best
+
+
 def fetch_lyrics(title, artist, album=None, duration_s=None):
     _log("fetch_lyrics start: %r - %r (album=%r, dur=%s)" % (artist, title, album, duration_s))
-    # Prefer the exact track/artist match (404 when not found), then fall
-    # back to a fuzzy search and take its best result.
     data = None
     # Try exact match first, with optional duration for better precision.
     try:
@@ -422,27 +553,44 @@ def fetch_lyrics(title, artist, album=None, duration_s=None):
             params += "&duration=%s" % int(duration_s)
         data = _lrclib_get("https://lrclib.net/api/get?%s" % params)
     except Exception:
+        data = None
+
+    chosen = None
+    candidates = []
+    if isinstance(data, dict):
+        candidates.append(data)
+    if isinstance(candidates, dict):
+        chosen = _pick_lyrics([candidates], artist, title, duration_s)
+    if chosen is None:
         try:
-            data = _lrclib_get(
+            candidates = _lrclib_get(
                 "https://lrclib.net/api/search?q=%s"
                 % urllib.parse.quote("%s %s" % (artist, title))
             )
-            if isinstance(data, list):
-                # If we have duration, prefer the entry whose duration is closest.
-                if data and duration_s:
-                    dur = int(duration_s)
-                    data.sort(key=lambda e: abs((e.get("duration") or 0) - dur))
-                data = data[0] if data else None
         except Exception as e:
             _log("fetch_lyrics error: %r" % (e,))
-            return _dumps({"lyrics": None, "is_synced": False})
-    if not data:
-        _log("fetch_lyrics done: no lyrics")
+            candidates = []
+    if isinstance(candidates, list):
+        chosen = _pick_lyrics(candidates, artist, title, duration_s)
+    elif isinstance(candidates, dict) and chosen is None:
+        chosen = _pick_lyrics([candidates], artist, title, duration_s)
+
+    if not chosen:
+        _log("fetch_lyrics done: no reliable match")
         return _dumps({"lyrics": None, "is_synced": False})
-    plain = data.get("plainLyrics") or ""
-    synced = data.get("syncedLyrics") or ""
+
+    plain = chosen.get("plainLyrics") or ""
+    synced = chosen.get("syncedLyrics") or ""
     # IMPORTANT: prefer synced lyrics over plain when available.
     lyrics_text = synced or plain
     is_synced = bool(synced)
-    _log("fetch_lyrics done: %d chars, synced=%s" % (len(lyrics_text), is_synced))
-    return _dumps({"lyrics": lyrics_text, "is_synced": is_synced})
+    _log("fetch_lyrics done: %d chars, synced=%s, matched=%r"
+         % (len(lyrics_text), is_synced, chosen.get("trackName")))
+    return _dumps({
+        "lyrics": lyrics_text,
+        "is_synced": is_synced,
+        "matched_duration": chosen.get("duration"),
+        "matched_title": chosen.get("trackName"),
+        "matched_artist": chosen.get("artistName"),
+        "instrumental": bool(chosen.get("instrumental")),
+    })

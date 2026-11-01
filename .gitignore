@@ -19,11 +19,16 @@ app/.pub-cache/
 apk/
 *.apk
 *.aab
+# Local build deliverables (APKs + checksums); documented in BUILD_REPORT.md
+artifacts/
 
 # Gradle & Android Studio
 .gradle/
 app/android/.gradle/
 app/android/local.properties
+app/android/key.properties
+*.jks
+*.keystore
 app/android/app/debug
 app/android/app/profile
 app/android/app/release

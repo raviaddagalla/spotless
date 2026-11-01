@@ -43,11 +43,13 @@ class YtBridge {
     return jsonDecode(result ?? 'false') as bool;
   }
 
-  Future<bool> setTags(String path, {String? title, String? artist}) async {
+  Future<bool> setTags(String path,
+      {String? title, String? artist, String? album}) async {
     final result = await _channel.invokeMethod<String>('setTags', {
       'path': path,
       'title': title,
       'artist': artist,
+      'album': album,
     });
     return jsonDecode(result ?? 'false') as bool;
   }
@@ -61,6 +63,13 @@ class YtBridge {
   Future<String> progress() async {
     final result = await _channel.invokeMethod<String>('getProgress');
     return result ?? '';
+  }
+
+  /// Aborts the in-flight yt-dlp download (the Python progress hook checks
+  /// for this flag and removes the partial file).
+  Future<bool> cancelDownload() async {
+    final result = await _channel.invokeMethod<String>('cancelDownload');
+    return jsonDecode(result ?? 'false') as bool;
   }
 
   Future<Map<String, dynamic>> fetchLyrics(
