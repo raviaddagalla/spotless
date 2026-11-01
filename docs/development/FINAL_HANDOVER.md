@@ -132,9 +132,10 @@ Code commits pushed to `origin/main`:
 - `19aeb96` — `test: cover library preservation and download queue behaviour`
 - `adebefd` — `docs: record audit, fixes, build and release state`
 
-Push verified with `git ls-remote origin refs/heads/main` returning
-`adebefd5279968c2741372b6d35a31252adbd0e9`.
-No force-push, no branch deletion, no history rewrite of existing commits.
+The push was verified against `origin/main` with `git ls-remote`; the final
+remote head includes this documentation file (run `git log origin/main` for
+the exact tip). No force-push, no branch deletion, no history rewrite of
+existing commits.
 
 ## 10. Remaining problems
 
