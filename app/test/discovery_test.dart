@@ -8,10 +8,66 @@ import 'package:spotless/core/services/discovery_service.dart';
 import 'package:spotless/core/services/feedback_service.dart';
 import 'package:spotless/core/services/local_provider.dart';
 import 'package:spotless/core/services/rating_service.dart';
+import 'package:spotless/core/services/recommendation_provider.dart';
 import 'package:spotless/core/services/session_manager.dart';
 import 'package:spotless/core/youtube/yt_bridge.dart';
 
 class _FakeYtBridge extends Fake implements YtBridge {}
+
+class _BrokenProvider implements RecommendationProvider {
+  @override
+  String get name => 'Broken';
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<List<RecommendationCandidate>> getSimilarTracks({
+    required String artist,
+    required String title,
+    int limit = 15,
+  }) async =>
+      throw StateError('provider is down');
+
+  @override
+  Future<List<RecommendationCandidate>> getRecommendationsForSeeds({
+    required List<SongRow> longTermSeeds,
+    required List<SongRow> sessionSeeds,
+    int limit = 20,
+  }) async =>
+      throw StateError('provider is down');
+}
+
+class _OneTrackProvider implements RecommendationProvider {
+  @override
+  String get name => 'OneTrack';
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<List<RecommendationCandidate>> getSimilarTracks({
+    required String artist,
+    required String title,
+    int limit = 15,
+  }) async =>
+      const [
+        RecommendationCandidate(
+          title: 'Fallback Track',
+          artist: 'Fallback Artist',
+          providerName: 'OneTrack',
+          providerScore: 0.8,
+        ),
+      ];
+
+  @override
+  Future<List<RecommendationCandidate>> getRecommendationsForSeeds({
+    required List<SongRow> longTermSeeds,
+    required List<SongRow> sessionSeeds,
+    int limit = 20,
+  }) async =>
+      getSimilarTracks(artist: '', title: '', limit: limit);
+}
 
 void main() {
   late AppDatabase db;
@@ -155,7 +211,7 @@ void main() {
               id: 'stale_track',
               title: 'Stale Song',
               artist: 'Old Artist',
-              provider: 'qloo',
+              provider: 'lastfm',
               createdAt: cutoff,
               status: const Value('candidate'),
             ),
@@ -181,6 +237,25 @@ void main() {
 
       final promoted = await (db.select(db.discoveryCandidates)..where((d) => d.id.equals('promoted_track'))).getSingleOrNull();
       expect(promoted, isNotNull);
+    });
+
+    test('a failing external provider does not abort local discovery', () async {
+      final resilient = DiscoveryService(
+        db: db,
+        sessionManager: sessionManager,
+        ratingService: ratingService,
+        feedbackService: feedbackService,
+        providers: [_BrokenProvider(), _OneTrackProvider()],
+        ytBridge: _FakeYtBridge(),
+      );
+      final seed = await (db.select(db.songs)
+            ..where((s) => s.id.equals('song_seed')))
+          .getSingle();
+
+      final tracks = await resilient.discoverSimilarTo(seed);
+
+      expect(tracks, hasLength(1));
+      expect(tracks.single.title, 'Fallback Track');
     });
   });
 }
