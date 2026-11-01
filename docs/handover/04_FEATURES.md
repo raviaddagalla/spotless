@@ -195,7 +195,7 @@ $$\text{finalScore} = (\text{providerScore} \times \text{externalWeight}) + \tex
 1. **Local Metadata Provider (`LocalMetadataProvider`)**: Computes 4D Euclidean distance between Spotify audio features:
    $$\text{dist} = \sqrt{(e_1-e_2)^2 + \left(\frac{t_1-t_2}{60}\right)^2 + (v_1-v_2)^2 + (d_1-d_2)^2} - (0.15 \times \text{genreOverlap})$$
 2. **Last.fm Provider (`LastFmProvider`)**: Calls `track.getsimilar` using configured user API key.
-3. **Qloo Provider (`QlooProvider`)**: Calls `/v2/insights` with entity type music.
+3. **Qloo Provider**: **Removed 2026-11-01** — the endpoint/response contract did not exist, so it could not produce real recommendations.
 
 ### 7.3 Stream-First & Promotion Workflow
 - Discovery tracks appear in `DiscoveryPage` with status `'candidate'`.

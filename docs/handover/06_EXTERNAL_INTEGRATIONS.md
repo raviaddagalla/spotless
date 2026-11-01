@@ -13,7 +13,6 @@
 | **YouTube (via embedded yt-dlp)** | Audio stream extraction, video search, canonical studio matching, downloading | None (uses public YouTube endpoints) | None required | Yes (for search/stream/download) | Offline playback from local library |
 | **LRCLIB (lrclib.net)** | Synchronized (`.lrc`) and plain text lyrics retrieval | None (Public open API) | User-Agent header (`Spotless/1.0`) | Yes (during download or lyrics fetch) | Local cached lyrics or plain text fallback |
 | **Last.fm Web Services** | Track similarity (`track.getSimilar`) and artist recommendations | Last.fm API Key | Settings UI (`_lastFmKeyPref`) | Yes | `LocalMetadataProvider` (offline acoustic Euclidean matching) |
-| **Qloo Taste API** | Cultural & cross-domain taste similarity | Qloo API Key | Settings UI (`_qlooKeyPref`) | Yes | `LocalMetadataProvider` |
 | **Spotify Cover CDN** | Album artwork downloading for pre-seeded tracks | None (Public image URLs from CSV) | None | Yes | YouTube video thumbnails or default placeholder |
 | **Localhost Audio Proxy** | ExoPlayer streaming bridge | None (Internal loopback `127.0.0.1`) | `network_security_config.xml` | Local loopback only | Direct file URI for local playback |
 
@@ -73,19 +72,13 @@
 
 ---
 
-### 2.4 Qloo Taste Intelligence API
-- **Source Files**:
-  - [app/lib/core/services/qloo_provider.dart](file:///d:/Nandhu/spotify/app/lib/core/services/qloo_provider.dart)
-- **Base Endpoint**: `https://api.qloo.com/v2/insights`
-- **Configuration**:
-  - Key entered by user in **Settings Page**.
-  - Stored in `SharedPreferences` under key `qloo_api_key`.
-- **Headers**:
-  ```http
-  X-Api-Key: <QLOO_API_KEY>
-  Accept: application/json
-  ```
-- **Fallback**: If key is empty or API returns non-200, returns empty candidate list; application continues with local acoustic provider.
+### 2.4 Qloo Taste Intelligence API — REMOVED
+
+`qloo_provider.dart` was deleted on 2026-11-01. The integration called an
+endpoint/shape that Qloo does not provide for this use case, so it could not
+return real recommendations and misleadingly exposed a key field. Discovery
+now uses `LocalMetadataProvider` plus optional Last.fm and the local
+taste/session ranking.
 
 ---
 

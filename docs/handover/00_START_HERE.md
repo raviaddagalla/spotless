@@ -12,7 +12,7 @@
 Spotless is a **personal, offline-first, Spotify-like music player for Android**. It was created to replace proprietary streaming apps by providing a local, private, beautifully designed audio player that plays the user's permanent local music library while augmenting it with:
 
 1. **YouTube Streaming & Canonical Audio Acquisition**: Streams un-downloaded tracks on demand and downloads official studio recordings using embedded `yt-dlp` and `mutagen` via Chaquopy.
-2. **Stream-First Music Discovery & Track Radio**: Recommends new music based on multi-source recommendation providers (Local Acoustic Features, Last.fm, Qloo) that users can listen to before deciding to promote/download into their permanent library.
+2. **Stream-First Music Discovery & Track Radio**: Recommends new music based on multi-source recommendation providers (Local Acoustic Features, optional Last.fm) that users can listen to before deciding to promote/download into their permanent library.
 3. **Inactivity-Based Session Continuity**: Strict activity-driven listening session tracking with zero clock/time-of-day bias.
 4. **1–10 Rating System with Event History**: Rating events are stored immutably to evaluate taste consistency across distinct sessions.
 5. **Interactive Synchronized Lyrics**: Formats `.lrc` lyrics with live position tracking, tap-to-seek, and automatic center-scrolling.
@@ -24,11 +24,11 @@ Spotless is a **personal, offline-first, Spotify-like music player for Android**
 ## 2. Current State of the Codebase
 
 - **Branch**: `main`
-- **Head Commit**: `bf03589` (`fix(discovery): remove final modifier on late discoveryService to allow provider updates`)
-- **Git State**: Clean working tree. Changes committed and pushed to remote `origin/main`.
-- **Static Analysis**: `flutter analyze` passes with **0 errors, 0 warnings, 0 issues** (`No issues found!`).
-- **Automated Tests**: **20 / 20 tests pass** (`app/test/session_test.dart`, `app/test/shuffle_test.dart`, `app/test/discovery_test.dart`).
-- **Release APK**: Built successfully at `app/build/app/outputs/flutter-apk/app-release.apk` (83.6MB, arm64-v8a + x86_64, debug-keystore signed for sideloading).
+- **Git State**: Engineering fixes committed and pushed to `origin/main`. See [16_ENGINEERING_PASS_2026-11-01.md](16_ENGINEERING_PASS_2026-11-01.md) and `docs/development/FINAL_HANDOVER.md` for hashes and status.
+- **Static Analysis**: `flutter analyze` passes with **0 errors, 0 warnings, 0 issues**.
+- **Automated Tests**: **27 / 27 tests pass** (session, shuffle, discovery, library scanner, download queue).
+- **Release APK**: Built at `artifacts/android/Spotless-0.1.0-release.apk` (87,834,851 B, arm64-v8a + x86_64) and signed with the local release key (`app/android/spotless-release.jks`, gitignored). The debug-signed fallback is not distributable.
+- **On-device verification**: BLOCKED on this machine (no device or AVD).
 
 ---
 
@@ -48,7 +48,7 @@ Spotless is a **personal, offline-first, Spotify-like music player for Android**
 
 > [!IMPORTANT]
 > **4. CHAQUOPY PYTHON RUNTIME CONSTRAINTS**  
-> The Android build embeds Python 3.12 via Chaquopy 17.0.0. The build host requires Python 3.12 (configured at `C:/Users/aravi/AppData/Local/Programs/Python/Python312/python.exe`). Supported ABIs are restricted to `arm64-v8a` and `x86_64` (32-bit `armeabi-v7a` is intentionally excluded because Python 3.12+ 64-bit packages do not support it). Do not add `--split-per-abi` to Flutter build commands as it conflicts with Chaquopy's NDK configuration.
+> The Android build embeds Python 3.12 via Chaquopy 17.0.0. The build host requires Python 3.12; set `CHAQUOPY_PYTHON` to its absolute path or have `python` on `PATH`. Supported ABIs are restricted to `arm64-v8a` and `x86_64` (32-bit `armeabi-v7a` is intentionally excluded because Python 3.12+ 64-bit packages do not support it). Do not add `--split-per-abi` to Flutter build commands as it conflicts with Chaquopy's NDK configuration.
 
 > [!IMPORTANT]
 > **5. SESSION RULES ARE SACROSANCT**  
@@ -67,7 +67,7 @@ To understand this system with minimal wasted exploration, read the dossier docu
 | 3 | [05_DATABASE_AND_DATA_MODELS.md](file:///d:/Nandhu/spotify/docs/handover/05_DATABASE_AND_DATA_MODELS.md) | Drift SQLite Schema v3, tables, entities, migration paths |
 | 4 | [04_FEATURES.md](file:///d:/Nandhu/spotify/docs/handover/04_FEATURES.md) | Deep technical breakdown of all 9 core subsystems (audio, yt-dlp, discovery, sessions, etc.) |
 | 5 | [02_REPOSITORY_MAP.md](file:///d:/Nandhu/spotify/docs/handover/02_REPOSITORY_MAP.md) | Annotated directory tree and architectural criticality index |
-| 6 | [06_EXTERNAL_INTEGRATIONS.md](file:///d:/Nandhu/spotify/docs/handover/06_EXTERNAL_INTEGRATIONS.md) | Chaquopy, yt-dlp, lrclib, Last.fm, Qloo, ExoPlayer proxy |
+| 6 | [06_EXTERNAL_INTEGRATIONS.md](file:///d:/Nandhu/spotify/docs/handover/06_EXTERNAL_INTEGRATIONS.md) | Chaquopy, yt-dlp, lrclib, Last.fm, ExoPlayer proxy |
 | 7 | [07_UI_AND_NAVIGATION.md](file:///d:/Nandhu/spotify/docs/handover/07_UI_AND_NAVIGATION.md) | Screen hierarchy, PixelPlayer M3 design system, state consumption |
 | 8 | [08_ANDROID_AND_BUILD.md](file:///d:/Nandhu/spotify/docs/handover/08_ANDROID_AND_BUILD.md) | Gradle, Chaquopy, Kotlin MethodChannels, Android permissions, ADB runbook |
 | 9 | [09_DEPENDENCIES.md](file:///d:/Nandhu/spotify/docs/handover/09_DEPENDENCIES.md) | Complete pubspec & pip inventory with override explanations |
@@ -77,7 +77,8 @@ To understand this system with minimal wasted exploration, read the dossier docu
 | 13 | [13_PRODUCT_REQUIREMENTS_AND_DECISIONS.md](file:///d:/Nandhu/spotify/docs/handover/13_PRODUCT_REQUIREMENTS_AND_DECISIONS.md) | The "Why" behind track identity, lyrics, sessions, ratings, and Kotlin UI evaluation |
 | 14 | [14_NEXT_AGENT_ROADMAP.md](file:///d:/Nandhu/spotify/docs/handover/14_NEXT_AGENT_ROADMAP.md) | Prioritized P0–P3 roadmap, critical questions to resolve |
 | 15 | [15_FILE_REFERENCE_INDEX.md](file:///d:/Nandhu/spotify/docs/handover/15_FILE_REFERENCE_INDEX.md) | Searchable symbol index: classes, files, line numbers, responsibilities |
-| 16 | [HANDOVER_MANIFEST.md](file:///d:/Nandhu/spotify/docs/handover/HANDOVER_MANIFEST.md) | Audit scope, inspected files, completeness verification |
+| 16 | [16_ENGINEERING_PASS_2026-11-01.md](file:///d:/Nandhu/spotify/docs/handover/16_ENGINEERING_PASS_2026-11-01.md) | What changed after the dossier: fixes, tests, APKs and corrected claims |
+| 17 | [HANDOVER_MANIFEST.md](file:///d:/Nandhu/spotify/docs/handover/HANDOVER_MANIFEST.md) | Audit scope, inspected files, completeness verification |
 
 ---
 

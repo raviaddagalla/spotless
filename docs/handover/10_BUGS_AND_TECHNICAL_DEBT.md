@@ -3,6 +3,11 @@
 > **Document Version**: 1.0.0  
 > **Date**: November 1, 2026  
 
+> **Update:** the engineering pass summarized in
+> [16_ENGINEERING_PASS_2026-11-01.md](16_ENGINEERING_PASS_2026-11-01.md) fixed
+> additional queue, crossfade, library-data loss, lyrics and download issues.
+> See `docs/development/FULL_CODEBASE_AUDIT.md` for the current issue register.
+
 ---
 
 ## 1. Issue Register
@@ -25,12 +30,9 @@
 
 ## 2. Technical Debt & Fragility Deep-Dive
 
-### 2.1 The Single-Threaded Python Executor (`MainActivity.kt`)
-- All Python calls (extract, search, download, tag, probe, lyrics) run on a single background worker thread (`Executors.newSingleThreadExecutor()`).
-- **Consequence**: If a large CSV import is actively running downloads in the background, a user attempting an on-demand YouTube search or streaming extract in the foreground will have their request queued behind the in-flight download until it finishes or times out.
-- **Architectural Recommendation**: Decouple the executor into two thread pools:
-  1. A low-priority queue for background downloads and batch tagging.
-  2. A high-priority queue for immediate UI playback resolution and search queries.
+### 2.1 Python Executors (`MainActivity.kt`) — RESOLVED 2026-11-01
+- Interactive calls, downloads and local file work now use separate executor pools with bounded timeouts.
+- A download no longer blocks search, streaming extraction, lyrics or tagging. A timed-out call is reported to Dart, and downloads can be cancelled through the Python cancel flag.
 
 ### 2.2 Acoustic Feature Cold-Start for New Tracks
 - When Spotless imports a Spotify CSV or discovers a song on YouTube, it stores the title, artist, and YouTube ID, but `energy`, `tempo`, `valence`, and `danceability` remain `null`.

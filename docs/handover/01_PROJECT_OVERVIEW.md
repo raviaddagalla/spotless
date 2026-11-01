@@ -92,7 +92,7 @@ The codebase is in **Active Post-Specification Polish & Stabilization**. All 14 
 | **Dynamic Playlists** | **Fully Implemented** | CRUD playlists in SQLite (`Playlists`, `PlaylistSongs`), drag-and-drop reordering, export to `.m3u`. |
 | **Spotify CSV Playlist Import** | **Fully Implemented** | Parses Spotify CSV exports, finds canonical tracks on YouTube, downloads, tags, and creates playlists. |
 | **Offline Library Scanner** | **Fully Implemented** | Scans USB-copied folder (`songs.csv`, `sleep.csv`, `no_sleep.csv`, `music/`, `lyrics/`) into SQLite. |
-| **Multi-Provider Discovery** | **Fully Implemented** | Combines `LocalMetadataProvider` (Euclidean distance), `LastFmProvider`, and `QlooProvider`. |
+| **Multi-Provider Discovery** | **Fully Implemented** | Combines `LocalMetadataProvider` (Euclidean distance) and optional `LastFmProvider`. Qloo was removed in the 2026-11-01 engineering pass. |
 | **Track Radio Modal Sheet** | **Fully Implemented** | Bottom sheet generating dynamic recommendation queue from any seed song. |
 | **PixelPlayer M3 Theming** | **Fully Implemented** | Dynamic color extraction from album art (`DynamicThemeProvider`), wavy slider, pill controls. |
 | **Background Media Notification** | **Fully Implemented** | `audio_service` media notification with play/pause/prev/next controls and lock screen art. |
@@ -100,7 +100,7 @@ The codebase is in **Active Post-Specification Polish & Stabilization**. All 14 
 
 ### 4.2 Partially Implemented / Environmental Dependencies
 - **Last.fm Recommendations**: Fully implemented code-wise in `LastFmProvider`, but requires user to enter their API key in Settings.
-- **Qloo Taste Intelligence**: Fully implemented in `QlooProvider`, but requires a valid Qloo API key in Settings.
+- **Qloo Taste Intelligence**: Removed on 2026-11-01; it depended on an API that does not provide the claimed functionality.
 - **Local Acoustic Features for New Downloads**: Pre-seeded CSV tracks have acoustic features (`energy`, `valence`, `tempo`, `danceability`). However, newly downloaded YouTube tracks do not automatically calculate acoustic features locally (they rely on metadata/genres or external providers).
 
 ### 4.3 Abandoned / Dropped Approaches

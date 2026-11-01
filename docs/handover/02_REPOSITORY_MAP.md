@@ -79,7 +79,7 @@ D:\Nandhu\spotify\
     │   │   │   ├── library_scanner.dart  <- USB folder scanner (CSV, MP3, LRC matching)
     │   │   │   ├── local_provider.dart   <- Offline acoustic distance (energy, tempo, valence, genre)
     │   │   │   ├── music_repository.dart <- Core application facade; UI talks ONLY to this
-    │   │   │   ├── qloo_provider.dart    <- Qloo Taste Intelligence API integration
+    │   │   │   └── (qloo_provider.dart was removed 2026-11-01)
     │   │   │   ├── rating_service.dart   <- 1-10 explicit rating events & consistency scoring
     │   │   │   ├── recommendation_provider.dart <- Abstract interface & candidate models
     │   │   │   ├── recommender.dart      <- Legacy MetadataRecommender seam

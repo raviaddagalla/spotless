@@ -129,7 +129,7 @@ graph TD
 ### 2.7 `DiscoveryPage` (`app/lib/ui/discovery_page.dart`)
 - **Purpose**: Stream-first personalized discovery feed.
 - **Components**:
-  - Candidate cards showing title, artist, provider origin badge (`'Local Library'`, `'Last.fm'`, `'Qloo'`), and calculated score.
+  - Candidate cards showing title, artist, provider origin badge (`'Local Library'`, `'Last.fm'`), and calculated score.
   - Stream button (plays directly from YouTube).
   - 10-star rating bar on each card.
   - "Promote" action button (adds candidate to library and initiates local download).
@@ -142,7 +142,7 @@ graph TD
   1. **Library**: Folder path selector and "Scan Library" button.
   2. **Spotify CSV Import**: `_ImportSection` utilizing `FilePicker` to import playlist CSVs directly from scratch.
   3. **Playback**: 4-second audio crossfade toggle switch.
-  4. **External Providers**: Text fields for Last.fm API Key and Qloo API Key.
+  4. **External Providers**: Optional Last.fm API key field. (Qloo was removed.)
   5. **Cover Art**: "Embed art into all files" batch processor and "Clear cover cache" action.
 
 ---

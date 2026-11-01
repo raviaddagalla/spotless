@@ -2,8 +2,14 @@
 
 > **Audit & Handover Date**: November 1, 2026  
 > **Repository**: [raviaddagalla/spotless](https://github.com/raviaddagalla/spotless)  
-> **Audit Commit**: `bf03589` (`fix(discovery): remove final modifier on late discoveryService to allow provider updates`)  
+> **Original Audit Commit**: `bf03589` (`fix(discovery): remove final modifier on late discoveryService to allow provider updates`)
 > **Auditing Agent**: DeepMind Antigravity Advanced Coding Assistant  
+
+> **Superseded state:** this dossier describes the code before the engineering
+> pass documented in [16_ENGINEERING_PASS_2026-11-01.md](16_ENGINEERING_PASS_2026-11-01.md).
+> Qloo has been removed, tests are now 27, and release builds use a local
+> release key when `app/android/key.properties` is present. The issue-level
+> record is in `docs/development/`.
 
 ---
 
@@ -27,7 +33,8 @@
 | [13_PRODUCT_REQUIREMENTS_AND_DECISIONS.md](file:///d:/Nandhu/spotify/docs/handover/13_PRODUCT_REQUIREMENTS_AND_DECISIONS.md) | The "Why" behind track identity, lyrics, sessions, ratings, and PixelPlayer Flutter vs. Kotlin feasibility | 100% Complete | None |
 | [14_NEXT_AGENT_ROADMAP.md](file:///d:/Nandhu/spotify/docs/handover/14_NEXT_AGENT_ROADMAP.md) | Prioritized work roadmap (P0–P3) and 10 critical questions the next agent must answer via code inspection | 100% Complete | None |
 | [15_FILE_REFERENCE_INDEX.md](file:///d:/Nandhu/spotify/docs/handover/15_FILE_REFERENCE_INDEX.md) | Searchable symbol index across application core, audio, database, services, python, lyrics, and UI | 100% Complete | None |
-| [HANDOVER_MANIFEST.md](file:///d:/Nandhu/spotify/docs/handover/HANDOVER_MANIFEST.md) | Scope manifest, inspection verification record, audit sign-off (YOU ARE HERE) | 100% Complete | None |
+| [16_ENGINEERING_PASS_2026-11-01.md](file:///d:/Nandhu/spotify/docs/handover/16_ENGINEERING_PASS_2026-11-01.md) | Post-dossier fixes, test/build state, corrected Qloo/signing/Python-path claims | 100% Complete | None |
+| [HANDOVER_MANIFEST.md](file:///d:/Nandhu/spotify/docs/handover/HANDOVER_MANIFEST.md) | Scope manifest, inspection verification record, audit sign-off (YOU ARE HERE) | 100% complete for the original audit; see document 16 for current state | Superseded state noted above |
 
 ---
 

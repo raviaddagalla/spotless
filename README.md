@@ -28,9 +28,9 @@ It is designed to remain strictly **offline-first** for the user's permanent loc
 * **Multi-Component Scoring**:
   $$\text{finalScore} = \text{longTermScore} + \text{currentSessionScore} + \text{externalScore} + \text{noveltyScore} - \text{repetitionPenalty} - \text{negativeFeedbackPenalty}$$
 * **Multiple Providers**:
-  - **Last.fm Provider**: External track and artist similarity web services.
-  - **Qloo Provider**: Cultural AI taste recommendations.
+  - **Last.fm Provider**: Optional external track and artist similarity web services.
   - **Local Metadata Provider**: Guaranteed offline fallback computing Euclidean acoustic distance using Spotify audio features (`energy`, `tempo`, `valence`, `danceability`, and genre overlaps).
+  - The previous Qloo integration was removed in the 2026-11-01 engineering pass because its API did not support the claimed use case.
 
 ### 5. Canonical YouTube Audio Acquisition
 * **Canonical Search Scoring**: Multi-candidate scoring evaluating official audio, artist/label channels (`vevo`, `records`), and duration divergence while penalizing `live`, `cover`, `remix`, `karaoke`, `instrumental`, `nightcore`, and fan uploads.
@@ -57,13 +57,13 @@ It is designed to remain strictly **offline-first** for the user's permanent loc
 Spotless Application
 │
 ├── lib/core/
-│   ├── audio/           # just_audio & audio_service integration (gapless & crossfade)
+│   ├── audio/           # just_audio & audio_service integration (crossfade, media session)
 │   ├── config/          # Centralized AppConfig (weights, decay constants, thresholds)
 │   ├── db/              # Drift SQLite ORM (Schema v3: Sessions, Ratings, Playback, Discovery)
 │   ├── lyrics/          # LRC parser & timestamp synchronization
 │   ├── models/          # SongStatus, Lyrics, and domain models
-│   ├── services/        # SessionManager, RatingService, FeedbackService,
-│   │                    # DiscoveryService, LocalMetadataProvider, LastFmProvider, QlooProvider
+│   ├── services/        # SessionManager, RatingService, FeedbackService, DownloadManager,
+│   │                    # DiscoveryService, LocalMetadataProvider, LastFmProvider
 │   ├── state/           # PlayerController (ChangeNotifier, Smart Shuffle)
 │   └── youtube/         # YtBridge (MethodChannel to Chaquopy Python)
 │
@@ -92,7 +92,7 @@ The project includes unit and integration tests covering the engineering specifi
 & "flutter" test
 ```
 
-### Test Coverage (20 / 20 Passing):
+### Test Coverage (27 / 27 Passing):
 1. **Specification §51 Session Scenarios 1–8**:
    - Continuous activity within 1 hour stays in same session.
    - Inactivity gap $\ge 1\text{ hour}$ creates a new session.
@@ -106,7 +106,9 @@ The project includes unit and integration tests covering the engineering specifi
 3. **Implicit Feedback**: Duration-weighted skips penalizing early skips ($<20\%$) more than late skips ($>80\%$).
 4. **Lyrics**: LRC timestamp parser and unsynchronized fallback.
 5. **Shuffle & Spacing**: Normal shuffle preservation and Smart Shuffle artist diversity spacing.
-6. **Discovery & Radio**: Offline acoustic similarity ranking, track radio generation, download promotion, and cache cleanup.
+6. **Discovery & Radio**: Offline acoustic similarity ranking, track radio generation, download promotion, cache cleanup, and provider-failure isolation.
+7. **Library Scanner**: Rescans preserve play counts, likes, ratings and downloads; deleted files become missing.
+8. **Download Queue**: Serialized ordering, progress, cancellation, retry and duplicate enqueue.
 
 Static analysis:
 ```powershell
@@ -119,9 +121,10 @@ Static analysis:
 ## Getting Started & Build Instructions
 
 ### Prerequisites
-* Flutter SDK (`^3.12.2` or later)
-* Android Studio / Android SDK (API 34)
-* Java 17+
+* Flutter SDK (`^3.12.2` or later; verified with Flutter 3.44.8 / Dart 3.12.2)
+* Android Studio / Android SDK (compileSdk 36, minSdk 24)
+* JDK 17+
+* CPython 3.12 for Chaquopy (set `CHAQUOPY_PYTHON` to its path, or put `python` on `PATH`)
 
 ### Running the App
 ```powershell
@@ -133,6 +136,13 @@ flutter run
 ### Building Release APK
 ```powershell
 cd app
-flutter build apk --release --target-platform android-arm64
+flutter build apk --release
 ```
-The APK will be generated at `app/build/app/outputs/flutter-apk/app-release.apk`.
+The universal APK is generated at `app/build/app/outputs/flutter-apk/app-release.apk`
+and contains both `arm64-v8a` and `x86_64` (required by Chaquopy). Do not use
+`--split-per-abi`.
+
+Release signing reads `app/android/key.properties` and
+`app/android/spotless-release.jks`, both gitignored. Without them Gradle falls
+back to the debug key and the resulting APK is **not distributable**. See
+`docs/development/BUILD_REPORT.md`.

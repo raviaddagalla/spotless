@@ -49,7 +49,6 @@ graph TD
         LrcP["LrcParser"]
         LocalProv["LocalMetadataProvider"]
         LastFmProv["LastFmProvider"]
-        QlooProv["QlooProvider"]
     end
 
     subgraph Storage ["Local Storage & Cache"]
@@ -63,7 +62,7 @@ graph TD
         AS["AudioService (Foreground Service)"]
         Exo["ExoPlayer (Android Media3)"]
         Bridge["YtBridge (MethodChannel: spotless/ytdlp)"]
-        KT["MainActivity.kt (SingleThreadExecutor)"]
+        KT["MainActivity.kt (interactive / download / local executor pools)"]
         PY["ytdlp.py (Chaquopy Python 3.12)"]
     end
 
@@ -71,7 +70,6 @@ graph TD
         YT["YouTube CDN (googlevideo streams)"]
         LRCLIB["lrclib.net (Lyrics API)"]
         LASTFM["Last.fm API"]
-        QLOO["Qloo Taste API"]
     end
 
     %% Connections
@@ -98,14 +96,12 @@ graph TD
 
     DS --> LocalProv
     DS --> LastFmProv
-    DS --> QlooProv
     DS --> SM
     DS --> RS
     DS --> FS
 
     LocalProv --> DB
     LastFmProv --> LASTFM
-    QlooProv --> QLOO
 
     AE --> AS
     AE --> Exo
@@ -290,7 +286,7 @@ graph TD
     end
 
     subgraph PythonWorker ["Native Python Worker (Chaquopy)"]
-        Exec["Executors.newSingleThreadExecutor() (Kotlin)"]
+        Exec["Interactive / download / local executor pools (Kotlin)"]
         PyModule["ytdlp.py (Chaquopy Engine)"]
         ProgFile["$HOME/ytdlp_progress.txt ('pct|done|total')"]
         DiskFile["files/spotless/downloads/dl_*.m4a|mp3"]

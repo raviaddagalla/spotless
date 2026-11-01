@@ -180,7 +180,7 @@ erDiagram
 
 ### 2.8 `DiscoveryCandidates` (`DiscoveryCandidate`)
 - **Primary Key**: `id` (`TextColumn`).
-- **Provider Names**: `'Local Library'`, `'Last.fm'`, `'Qloo'`.
+- **Provider Names**: `'Local Library'`, `'Last.fm'`. (Qloo removed 2026-11-01.)
 - **Lifecycle**:
   - Initial: `'candidate'`
   - User plays candidate: `'streamed'`
