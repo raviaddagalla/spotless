@@ -9,7 +9,7 @@ excluded from line-by-line review (7,289 generated lines); its source of truth
 ## 1. Source inventory
 
 60 hand-written Dart files (13,803 lines), 2 native service files (746 lines),
-4 test files (682 lines), plus Gradle/manifest/config.
+5 test files (811 lines), plus Gradle/manifest/config.
 
 | Layer | Files | Responsibility |
 |---|---|---|
@@ -26,7 +26,7 @@ excluded from line-by-line review (7,289 generated lines); its source of truth
 | `ui/theme` | 4 | Colors, typography, Material 3 theme, album-art palette |
 | `ui/widgets` | 14 | Tiles, sliders, mini player, rating, lyrics view, pickers |
 | native | 2 | `MainActivity.kt` (Chaquopy bridge), `ytdlp.py` (search/extract/download/lyrics/tags) |
-| tests | 4 | Discovery, session/rating/lyrics, shuffle, library scanner |
+| tests | 5 | Discovery, session/rating/lyrics, shuffle, library scanner, download queue |
 
 Architecture: Flutter UI → `PlayerController` (queue, shuffle, session,
 feedback) → `AudioEngine` (single authoritative playback engine) →
