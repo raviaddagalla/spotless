@@ -130,10 +130,10 @@ Code commits pushed to `origin/main`:
 - `d5ee53b` — `fix(lyrics): guard against stale and mismatched lyrics`
 - `c09dac5` — `fix(android): make the Python bridge portable and cancellable`
 - `19aeb96` — `test: cover library preservation and download queue behaviour`
-- Documentation commit follows this file.
+- `adebefd` — `docs: record audit, fixes, build and release state`
 
 Push verified with `git ls-remote origin refs/heads/main` returning
-`19aeb96a414e573b3f2a26a14fb770e0f9ef9b80` before the documentation commit.
+`adebefd5279968c2741372b6d35a31252adbd0e9`.
 No force-push, no branch deletion, no history rewrite of existing commits.
 
 ## 10. Remaining problems
