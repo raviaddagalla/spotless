@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
 import 'theme/dynamic_theme_provider.dart';
 import 'theme/spotless_colors.dart';
@@ -24,6 +25,50 @@ class LyricsPage extends StatefulWidget {
 
 class _LyricsPageState extends State<LyricsPage> {
   bool _showSynced = true;
+  bool _fetching = false;
+  String? _lyricsError;
+
+  /// Re-queries LRCLIB with the current recording's title, artist, album and
+  /// duration. `force: true` lets the user replace a wrong/unsynced match;
+  /// the repository/Python side rejects matches with a >8s duration gap.
+  Future<void> _findLyrics() async {
+    if (_fetching) return;
+    final player = context.read<PlayerController>();
+    final repo = context.read<MusicRepository>();
+    final song = player.currentSong;
+    if (song == null) return;
+    setState(() {
+      _fetching = true;
+      _lyricsError = null;
+    });
+    try {
+      final lyrics = await repo.fetchLyricsFor(song, force: true);
+      await player.reloadLyrics();
+      if (!mounted) return;
+      setState(() {
+        _fetching = false;
+        _lyricsError = lyrics == null
+            ? 'No reliable lyrics match was found for this recording.'
+            : null;
+        if (lyrics != null) _showSynced = true;
+      });
+      if (lyrics != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              lyrics.synced ? 'Synced lyrics loaded' : 'Lyrics loaded',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _fetching = false;
+        _lyricsError = 'Lyrics lookup failed: $e';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +111,19 @@ class _LyricsPageState extends State<LyricsPage> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
-                    const SizedBox(width: 48), // balance the back button
+                    SizedBox(
+                      width: 48,
+                      child: _fetching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.refresh_rounded, size: 20),
+                              tooltip: 'Find lyrics again',
+                              onPressed: _findLyrics,
+                            ),
+                    ),
                   ],
                 ),
               ),
@@ -118,6 +175,36 @@ class _LyricsPageState extends State<LyricsPage> {
                                   ?.copyWith(
                                     color: SpotlessColors.onSurfaceMedium,
                                   ),
+                            ),
+                            if (_lyricsError != null) ...[
+                              const SizedBox(height: 10),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 32),
+                                child: Text(
+                                  _lyricsError!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: SpotlessColors.onSurfaceDim,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 18),
+                            FilledButton.icon(
+                              icon: _fetching
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.search_rounded),
+                              label: Text(
+                                _fetching ? 'Searching…' : 'Find lyrics',
+                              ),
+                              onPressed: _fetching ? null : _findLyrics,
                             ),
                           ],
                         ),
