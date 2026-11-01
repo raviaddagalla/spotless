@@ -427,6 +427,17 @@ class _LikeToggleState extends State<_LikeToggle> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant _LikeToggle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.song.id != widget.song.id) {
+      // The widget sits in the persistent player row; without this the heart
+      // kept showing the previous track's liked state after auto-advance.
+      _liked = null;
+      _load();
+    }
+  }
+
   Future<void> _load() async {
     final liked = await context.read<MusicRepository>().isLiked(widget.song.id);
     if (mounted) setState(() => _liked = liked);

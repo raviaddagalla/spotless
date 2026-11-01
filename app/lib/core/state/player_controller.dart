@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import '../audio/audio_engine.dart';
 import '../db/app_database.dart';
 import '../models/lyrics.dart';
+import '../services/download_manager.dart';
 import '../services/music_repository.dart';
 
 enum ShuffleMode {
@@ -38,10 +39,17 @@ class PlayerController extends ChangeNotifier {
 
   StreamSubscription<PlaybackState>? _stateSub;
   StreamSubscription<Duration?>? _durationSub;
+  Timer? _sessionHeartbeat;
+
+  /// A stream that fails repeatedly (offline, every URL expired, YouTube
+  /// blocked) must not recurse through the entire queue forever. After this
+  /// many consecutive load failures we stop and surface the error.
+  int _loadFailureStreak = 0;
 
   PlayerController({required this.repo, required this.engine}) {
     engine.onSongChanged = _onSongChanged;
     engine.onQueueEnded = _onQueueEnded;
+    engine.onTrackCompleted = _onTrackCompleted;
     engine.onLoadError = _onLoadError;
     engine.resolver = _resolveUri;
     _stateSub = engine.stateStream.listen((state) {
@@ -67,6 +75,10 @@ class PlayerController extends ChangeNotifier {
           state.processingState == AudioProcessingState.completed) {
         _loading = false;
       }
+      if (state.processingState == AudioProcessingState.ready) {
+        _loadFailureStreak = 0;
+      }
+      _syncSessionHeartbeat(state.playing);
       notifyListeners();
     });
     _durationSub = engine.durationStream.listen((d) {
@@ -108,6 +120,7 @@ class PlayerController extends ChangeNotifier {
     _current = startIndex.clamp(0, _queue.length - 1);
     _queueEnded = false;
     _error = null;
+    _loadFailureStreak = 0;
     if (_shuffleMode == ShuffleMode.normal) {
       _regenerateShuffle(keepFirst: _current);
     } else if (_shuffleMode == ShuffleMode.smart) {
@@ -121,31 +134,36 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> addNext(SongRow song) async {
-    final pos = _current + 1;
+    final pos = (_current + 1).clamp(0, _queue.length);
     _queue.insert(pos, song);
+    _shiftShuffleForInsert(pos, afterIndex: _current);
     await _syncEngineQueue(reload: false);
     notifyListeners();
   }
 
   Future<void> addToQueue(SongRow song) async {
+    final pos = _queue.length;
     _queue.add(song);
+    _shiftShuffleForInsert(pos, afterIndex: null);
     await _syncEngineQueue(reload: false);
     notifyListeners();
   }
 
   Future<void> removeAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
+    final removedCurrent = index == _current;
     _queue.removeAt(index);
     if (_queue.isEmpty) {
       await stop();
       return;
     }
-    if (index == _current) {
-      _current = _current.clamp(0, _queue.length - 1);
+    if (index < _current) _current--;
+    if (_current >= _queue.length) _current = _queue.length - 1;
+    _removeShuffleIndex(index);
+    if (removedCurrent) {
       await _startCurrent();
       return;
     }
-    if (index < _current) _current--;
     await _syncEngineQueue(reload: false);
     notifyListeners();
   }
@@ -217,10 +235,26 @@ class PlayerController extends ChangeNotifier {
     engine.setCrossfade(duration);
   }
 
-  Future<void> togglePlayPause() => engine.toggle();
+  Future<void> togglePlayPause() async {
+    final song = currentSong;
+    if (song == null) return;
+    if (_playing) {
+      unawaited(repo.sessionManager.recordActivity(reason: 'pause'));
+      await engine.pause();
+    } else {
+      // Resuming after any gap is meaningful listening activity. Without
+      // this, resuming a paused queue after >1h continued the old session
+      // until the next track change.
+      unawaited(repo.sessionManager.recordActivity(reason: 'resume'));
+      await engine.toggle();
+    }
+  }
 
   Future<void> next() async {
     _queueEnded = false;
+    // Every manual skip is meaningful activity, even when the track had
+    // played past 80% (where the implicit skip signal is intentionally weak).
+    unawaited(repo.sessionManager.recordActivity(reason: 'skip_next'));
     // Record implicit skip if moving away before 80% played
     if (currentSong != null && _duration > Duration.zero) {
       final pct = _position.inMilliseconds / _duration.inMilliseconds;
@@ -237,6 +271,7 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> previous() async {
     _queueEnded = false;
+    unawaited(repo.sessionManager.recordActivity(reason: 'previous'));
     await engine.previous();
   }
 
@@ -247,6 +282,7 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> jumpTo(int queueIndex) async {
     _queueEnded = false;
+    unawaited(repo.sessionManager.recordActivity(reason: 'jump_to_queue'));
     await engine.loadIndex(queueIndex);
   }
 
@@ -276,10 +312,25 @@ class PlayerController extends ChangeNotifier {
           notifyListeners();
         },
       );
+      await _refreshQueueSong(song.id);
+    } on DownloadCancelledException {
+      _error = 'Download cancelled';
     } catch (e) {
       _error = 'Download failed: $e';
     } finally {
       _downloading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Pulls fresh download status/path into the active queue so the player and
+  /// library stop showing a completed download as streamable.
+  Future<void> _refreshQueueSong(String songId) async {
+    final fresh = await repo.songById(songId);
+    if (fresh == null) return;
+    final idx = _queue.indexWhere((s) => s.id == songId);
+    if (idx >= 0) {
+      _queue[idx] = fresh;
       notifyListeners();
     }
   }
@@ -292,6 +343,11 @@ class PlayerController extends ChangeNotifier {
   }) async {
     try {
       await repo.downloadSong(song, onProgress: onProgress);
+      await _refreshQueueSong(song.id);
+    } on DownloadCancelledException {
+      _error = 'Download cancelled';
+      notifyListeners();
+      rethrow;
     } catch (e) {
       _error = 'Download failed: $e';
       notifyListeners();
@@ -471,8 +527,39 @@ class PlayerController extends ChangeNotifier {
         : spaced;
   }
 
+  bool get _shuffleOrderValid =>
+      _shuffleOrder.length == _queue.length &&
+      _shuffleOrder.toSet().length == _queue.length &&
+      _shuffleOrder.every((i) => i >= 0 && i < _queue.length);
+
+  /// Maintains index-based shuffle order when the queue gains an item.
+  /// Every existing index >= [pos] shifts right. The new item is placed
+  /// directly after [afterIndex] when one is supplied (Play Next), otherwise
+  /// at the end of the shuffled sequence.
+  void _shiftShuffleForInsert(int pos, {int? afterIndex}) {
+    if (!shuffle || _shuffleOrder.isEmpty) return;
+    for (var i = 0; i < _shuffleOrder.length; i++) {
+      if (_shuffleOrder[i] >= pos) _shuffleOrder[i]++;
+    }
+    final anchor = afterIndex != null ? _shuffleOrder.indexOf(afterIndex) : -1;
+    final insertAt = anchor >= 0 ? anchor + 1 : _shuffleOrder.length;
+    _shuffleOrder.insert(insertAt, pos);
+  }
+
+  /// Maintains index-based shuffle order when the queue loses an item.
+  void _removeShuffleIndex(int removed) {
+    if (!shuffle || _shuffleOrder.isEmpty) return;
+    _shuffleOrder.removeWhere((i) => i == removed);
+    for (var i = 0; i < _shuffleOrder.length; i++) {
+      if (_shuffleOrder[i] > removed) _shuffleOrder[i]--;
+    }
+  }
+
   Future<void> _syncEngineQueue({bool reload = true}) async {
     if (_queue.isEmpty) return;
+    if (shuffle && !_shuffleOrderValid) {
+      _regenerateShuffle(keepFirst: _current);
+    }
     final items = _queue
         .map((s) => MediaItem(
               id: s.id,
@@ -538,11 +625,34 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  /// Re-reads the current song's lyrics (used after a manual LRCLIB fetch).
+  Future<void> reloadLyrics() async {
+    final song = currentSong;
+    if (song != null) await _loadLyrics(song.id);
+  }
+
+  int _lyricsRequest = 0;
+
   Future<void> _loadLyrics(String songId) async {
     final song = _queue.where((s) => s.id == songId).firstOrNull;
     if (song == null) return;
-    _currentLyrics = await repo.lyricsFor(song);
+    final request = ++_lyricsRequest;
+    // Clear immediately so the previous track's lyrics are never shown
+    // underneath the new track while the database lookup is in flight.
+    _currentLyrics = null;
     notifyListeners();
+    try {
+      final lyrics = await repo.lyricsFor(song);
+      // A slow lookup for track A must not overwrite track B's lyrics.
+      if (request != _lyricsRequest || currentSong?.id != songId) return;
+      _currentLyrics = lyrics;
+      notifyListeners();
+    } catch (e) {
+      if (request != _lyricsRequest || currentSong?.id != songId) return;
+      _currentLyrics = null;
+      debugPrint('[controller] lyrics load failed for $songId: $e');
+      notifyListeners();
+    }
   }
 
   Future<void> _onSongChanged(int queueIndex) async {
@@ -563,23 +673,62 @@ class PlayerController extends ChangeNotifier {
     unawaited(repo.recordPlay(song));
   }
 
+  /// Records the natural completion of every track, not just the last one.
+  /// Without this, auto-advance never produced a completion signal and the
+  /// recommender saw only skips/play-starts for most of the library.
+  void _onTrackCompleted(int queueIndex) {
+    if (queueIndex < 0 || queueIndex >= _queue.length) return;
+    final song = _queue[queueIndex];
+    final seconds = _duration > Duration.zero
+        ? _duration.inSeconds
+        : (song.durationMs != null ? song.durationMs! ~/ 1000 : 0);
+    unawaited(repo.feedbackService.recordTrackCompleted(
+      song.id,
+      secondsPlayed: seconds,
+    ));
+  }
+
   Future<void> _onQueueEnded() async {
     _queueEnded = true;
-    if (currentSong != null) {
-      unawaited(repo.feedbackService.recordTrackCompleted(
-        currentSong!.id,
-        secondsPlayed: _duration.inSeconds,
-      ));
-    }
     await engine.pause();
     notifyListeners();
   }
 
   Future<void> _onLoadError(int queueIndex, Object error) async {
-    if (queueIndex == _current) {
-      _error = 'Playback failed: $error';
+    if (queueIndex != _current) return;
+    _loadFailureStreak++;
+    _error = 'Playback failed: $error';
+    _loading = false;
+    notifyListeners();
+    // One unreachable stream is normal (expired URL); a whole queue of them
+    // means the network/YouTube is unavailable. Stop instead of looping
+    // through every track forever.
+    if (_loadFailureStreak > _queue.length) {
+      _error = 'Playback failed for every track in this queue. '
+          'Check your connection and try again.\n$error';
       notifyListeners();
-      await next();
+      await engine.pause();
+      return;
+    }
+    await next();
+  }
+
+  // ---- session heartbeat ----
+
+  /// A session must follow continuity of listening, not track-change events.
+  /// Without a heartbeat, listening to one long track (or a continuous album)
+  /// for over an hour would look like inactivity and split the session.
+  void _syncSessionHeartbeat(bool playing) {
+    if (playing) {
+      _sessionHeartbeat ??= Timer.periodic(
+        const Duration(minutes: 5),
+        (_) => unawaited(repo.sessionManager.recordActivity(
+          reason: 'playback_heartbeat',
+        )),
+      );
+    } else {
+      _sessionHeartbeat?.cancel();
+      _sessionHeartbeat = null;
     }
   }
 
@@ -589,6 +738,7 @@ class PlayerController extends ChangeNotifier {
     _durationSub?.cancel();
     _sleepTimer?.cancel();
     _sleepTick?.cancel();
+    _sessionHeartbeat?.cancel();
     super.dispose();
   }
 }

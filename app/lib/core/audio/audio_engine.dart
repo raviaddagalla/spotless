@@ -52,6 +52,9 @@ class AudioEngine extends BaseAudioHandler {
   /// Fired when the queue ends with repeat off.
   void Function()? onQueueEnded;
 
+  /// Fired once when a track plays to its natural end, before advancing.
+  void Function(int queueIndex)? onTrackCompleted;
+
   /// Fired when loading/playing a song fails (expired URL, network...).
   void Function(int queueIndex, Object error)? onLoadError;
 
@@ -71,6 +74,9 @@ class AudioEngine extends BaseAudioHandler {
   }
 
   void _attach(AudioPlayer p) {
+    // Cancel any previous subscriptions first: crossfades swap the active
+    // player, and attaching twice would leak the old listeners.
+    _detach();
     _eventSub = p.playbackEventStream.listen(_onPlaybackEvent);
     _stateSub = p.playerStateStream.listen(_onPlayerState);
     _procSub = p.processingStateStream.listen(_onProcessingState);
@@ -80,6 +86,8 @@ class AudioEngine extends BaseAudioHandler {
     _eventSub?.cancel();
     _stateSub?.cancel();
     _procSub?.cancel();
+    _ticker?.cancel();
+    _ticker = null;
   }
 
   void _onPlaybackEvent(PlaybackEvent event) {
@@ -118,20 +126,51 @@ class AudioEngine extends BaseAudioHandler {
     bool autoPlay = true,
     bool reload = true,
   }) async {
+    // Capture the currently playing *queue* index before replacing the
+    // order. The old code computed it after assigning `_order`, so swapping
+    // in a new shuffle permutation pointed `_seq` at an unrelated song.
+    final previousQueueIndex = currentIndex;
+
     _queue = List.of(items);
     _order = List.of(order ?? List.generate(items.length, (i) => i));
-    if (_order.length != items.length) {
+    if (_order.length != items.length ||
+        _order.toSet().length != items.length ||
+        _order.any((i) => i < 0 || i >= items.length)) {
+      // A stale shuffle permutation from the controller must never make the
+      // engine index out of bounds.
       _order = List.generate(items.length, (i) => i);
     }
     _publishQueue();
     _urls.clear();
-    if (items.isEmpty) return;
+    if (items.isEmpty) {
+      _seq = -1;
+      mediaItem.add(null);
+      return;
+    }
     if (reload) {
       final start = (startAt ?? 0).clamp(0, items.length - 1);
       await _load(start, autoPlay: autoPlay);
     } else {
-      final cur = currentIndex;
-      _seq = cur >= 0 && _order.contains(cur) ? _order.indexOf(cur) : -1;
+      // The controller has already adjusted its current index for any queue
+      // insertion/removal. Prefer that explicit startAt over our own previous
+      // queue index: removing an item before the current song shifts every
+      // later index, so the old index would point at the wrong track and the
+      // engine would silently jump to its neighbour.
+      final keep = startAt != null && _order.contains(startAt)
+          ? startAt
+          : previousQueueIndex >= 0 && _order.contains(previousQueueIndex)
+              ? previousQueueIndex
+              : -1;
+      _seq = keep >= 0 ? _order.indexOf(keep) : -1;
+      if (keep >= 0) {
+        mediaItem.add(_queue[keep]);
+      }
+      // Keep the media session's queue position in sync with reorder/insert
+      // operations; otherwise notification/lock-screen controls show a stale
+      // index until the next playback event.
+      playbackState.add(playbackState.value.copyWith(
+        queueIndex: currentIndex >= 0 ? currentIndex : null,
+      ));
     }
   }
 
@@ -140,7 +179,20 @@ class AudioEngine extends BaseAudioHandler {
     await _load(queueIndex, autoPlay: autoPlay);
   }
 
-  Future<void> toggle() => _player.playing ? _player.pause() : _player.play();
+  Future<void> toggle() async {
+    if (_player.playing) {
+      await _player.pause();
+      return;
+    }
+    _activePlayback = true;
+    // just_audio's play() future only completes when playback pauses, stops
+    // or reaches the end. Never await it here (or in _load) — that would
+    // block the caller for the whole song and freeze UI transitions.
+    if (_player.processingState == ProcessingState.completed) {
+      await _player.seek(Duration.zero);
+    }
+    unawaited(_player.play());
+  }
 
   Future<void> next() async {
     if (_queue.isEmpty) return;
@@ -150,7 +202,11 @@ class AudioEngine extends BaseAudioHandler {
       onQueueEnded?.call();
       return;
     }
-    if (_crossfade > Duration.zero) {
+    // Crossfading only makes sense while audio is actually audible. When the
+    // user presses Next while paused, starting the next track at volume 0 and
+    // fading it in produces an unexpected burst of sound before the paused
+    // check at the end of the fade. Load it normally instead.
+    if (_crossfade > Duration.zero && _player.playing) {
       await _crossfadeTo(nextIdx);
     } else {
       await _load(nextIdx);
@@ -169,6 +225,8 @@ class AudioEngine extends BaseAudioHandler {
     await _ensureIdle();
     if (_seq > 0) {
       await _load(_order[_seq - 1]);
+    } else if (_repeat == RepeatMode.all && _order.isNotEmpty) {
+      await _load(_order.last);
     } else {
       await _player.seek(Duration.zero);
     }
@@ -220,19 +278,28 @@ class AudioEngine extends BaseAudioHandler {
       if (!old.playing && old.processingState != ProcessingState.completed) {
         await next.pause();
       }
+      // Detach before stopping the old player. Otherwise its transition to
+      // idle is reported as an unexpected stream failure and the controller
+      // skips a track after every successful crossfade.
+      _detach();
       _activePlayback = false;
       await old.stop();
       await old.setVolume(1.0);
       await next.setVolume(1.0);
-      _detach();
       _player = next;
       _aux = old;
       _attach(_player);
       _seq = _order.indexOf(queueIndex);
       if (_seq < 0) _seq = queueIndex;
+      _activePlayback = next.playing;
       mediaItem.add(item);
       onSongChanged?.call(queueIndex);
     } catch (e) {
+      // A failed crossfade must not leave the auxiliary player audible.
+      try {
+        await _aux.stop();
+        await _aux.setVolume(1.0);
+      } catch (_) {}
       onLoadError?.call(queueIndex, e);
     }
   }
@@ -258,9 +325,18 @@ class AudioEngine extends BaseAudioHandler {
     onSongChanged?.call(queueIndex);
     try {
       await _startSourceOn(_player, queueIndex);
-      if (autoPlay) await _player.play();
-      _activePlayback = true;
+      if (autoPlay) {
+        // Mark active before calling play(): the state listener uses this
+        // flag to distinguish a stream failure (unexpected idle) from a
+        // user/engine-requested stop. Awaiting play() would never return
+        // until the song ends, so it must stay unawaited.
+        _activePlayback = true;
+        unawaited(_player.play());
+      } else {
+        _activePlayback = false;
+      }
     } catch (e) {
+      _activePlayback = false;
       onLoadError?.call(queueIndex, e);
     }
   }
@@ -362,9 +438,12 @@ class AudioEngine extends BaseAudioHandler {
 
   Future<void> _handleCompletion() async {
     _activePlayback = false;
+    final completed = currentIndex;
+    if (completed >= 0) onTrackCompleted?.call(completed);
     if (_repeat == RepeatMode.one) {
       await _player.seek(Duration.zero);
-      await _player.play();
+      _activePlayback = true;
+      unawaited(_player.play());
       return;
     }
     final nextIdx = _computeNext();
@@ -408,7 +487,10 @@ class AudioEngine extends BaseAudioHandler {
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
-      queueIndex: _seq >= 0 ? _seq : event.currentIndex,
+      // `queue` is published in library order, not shuffle order, so the
+      // media-session index must be the queue index. `_seq` indexes `_order`
+      // and would point at the wrong MediaItem when shuffle is enabled.
+      queueIndex: currentIndex >= 0 ? currentIndex : event.currentIndex,
       repeatMode: switch (_repeat) {
         RepeatMode.off => AudioServiceRepeatMode.none,
         RepeatMode.all => AudioServiceRepeatMode.all,
@@ -420,7 +502,16 @@ class AudioEngine extends BaseAudioHandler {
   // ---- BaseAudioHandler overrides (notification + system controls) ----
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    // The media session can deliver play after stop() cleared the queue.
+    // Calling AudioPlayer.play() with no source throws asynchronously.
+    if (_queue.isEmpty || _seq < 0) return;
+    _activePlayback = true;
+    if (_player.processingState == ProcessingState.completed) {
+      await _player.seek(Duration.zero);
+    }
+    unawaited(_player.play());
+  }
 
   @override
   Future<void> pause() => _player.pause();
@@ -436,12 +527,20 @@ class AudioEngine extends BaseAudioHandler {
 
   @override
   Future<void> stop() async {
+    // A crossfade has both players live; stopping only the active one would
+    // leave the previous/next track audible until the fade finishes.
+    await _ensureIdle();
     _activePlayback = false;
+    _seq = -1;
     await _player.stop();
+    await _aux.stop();
+    mediaItem.add(null);
+    queue.add(const []);
     playbackState.add(playbackState.value.copyWith(
       controls: const [MediaControl.stop],
       processingState: AudioProcessingState.idle,
       playing: false,
+      queueIndex: null,
     ));
     await super.stop();
   }

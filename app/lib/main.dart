@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import 'core/audio/audio_engine.dart';
 import 'core/db/app_database.dart';
+import 'core/services/download_manager.dart';
 import 'core/services/music_repository.dart';
 import 'core/state/player_controller.dart';
 import 'core/youtube/yt_bridge.dart';
@@ -50,6 +51,7 @@ void main() {
         MultiProvider(
           providers: [
             Provider<MusicRepository>.value(value: repo),
+            ChangeNotifierProvider<DownloadManager>.value(value: repo.downloads),
             ChangeNotifierProvider<PlayerController>.value(value: controller),
             ChangeNotifierProvider<DynamicThemeProvider>.value(
                 value: dynamicTheme),
