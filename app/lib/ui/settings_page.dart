@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
+import '../core/services/download_manager.dart';
 import '../core/services/music_repository.dart';
 import '../core/state/player_controller.dart';
 import 'debug_page.dart';
+import 'downloads_page.dart';
 import 'theme/spotless_colors.dart';
 
 /// Redesigned Settings screen with organized Material 3 card containers,
@@ -131,6 +136,7 @@ class _ImportSection extends StatefulWidget {
 
 class _ImportSectionState extends State<_ImportSection> {
   bool _busy = false;
+  bool _cancelRequested = false;
 
   Future<void> _import() async {
     final picked = await FilePicker.pickFiles(
@@ -142,7 +148,10 @@ class _ImportSectionState extends State<_ImportSection> {
     if (picked == null || picked.files.isEmpty || !mounted) return;
     final repo = context.read<MusicRepository>();
     final paths = picked.files.map((f) => f.path!).toList();
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _cancelRequested = false;
+    });
 
     final progress = ValueNotifier<(int, int, String)>((0, 0, 'Starting…'));
     showDialog(
@@ -151,21 +160,34 @@ class _ImportSectionState extends State<_ImportSection> {
       builder: (_) => _ProgressDialog(
         title: 'Importing playlists',
         progress: progress,
+        onCancel: () {
+          _cancelRequested = true;
+          progress.value = (progress.value.$1, progress.value.$2,
+              'Cancelling after the current download…');
+          repo.downloads.cancelAll();
+        },
       ),
     );
 
     try {
-      final result = await repo.importPlaylistCsvs(paths, onProgress: (d, t, m) {
-        progress.value = (d, t, m);
-      });
+      final result = await repo.importPlaylistCsvs(
+        paths,
+        onProgress: (d, t, m) {
+          progress.value = (d, t, m);
+        },
+        isCancelled: () => _cancelRequested,
+      );
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Imported ${result.imported} songs'
-              '${result.skipped > 0 ? ', ${result.skipped} already downloaded' : ''}'
-              '${result.failed > 0 ? ', ${result.failed} failed' : ''}.',
+              _cancelRequested
+                  ? 'Import cancelled after ${result.imported} new download(s). '
+                      'Run it again to resume.'
+                  : 'Imported ${result.imported} songs'
+                      '${result.skipped > 0 ? ', ${result.skipped} already downloaded' : ''}'
+                      '${result.failed > 0 ? ', ${result.failed} failed' : ''}.',
             ),
           ),
         );
@@ -265,7 +287,47 @@ class _LibrarySectionState extends State<_LibrarySection> {
     super.dispose();
   }
 
+  /// The library lives in shared storage (`/storage/emulated/0/...`). Since
+  /// Android 11, raw filesystem access there requires the All Files Access
+  /// special permission; declaring it in the manifest alone does nothing.
+  Future<bool> _ensureStorageAccess() async {
+    if (!Platform.isAndroid) return true;
+    final manage = await Permission.manageExternalStorage.status;
+    if (manage.isGranted) return true;
+    final requested = await Permission.manageExternalStorage.request();
+    if (requested.isGranted) return true;
+    // Android 10 and below use the legacy storage permission instead.
+    final legacy = await Permission.storage.request();
+    if (legacy.isGranted) return true;
+    if (!mounted) return false;
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Storage access required'),
+        content: const Text(
+          'Spotless needs access to the folder containing your music and CSV '
+          'exports. Grant “All files access” in the system settings, then try '
+          'again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Open settings'),
+          ),
+        ],
+      ),
+    );
+    if (open == true) await openAppSettings();
+    return false;
+  }
+
   Future<void> _browse() async {
+    if (!await _ensureStorageAccess()) return;
+    if (!mounted) return;
     final picked = await FilePicker.getDirectoryPath(
       dialogTitle: 'Pick the library folder (music/, lyrics/, songs.csv)',
     );
@@ -278,6 +340,8 @@ class _LibrarySectionState extends State<_LibrarySection> {
     final repo = context.read<MusicRepository>();
     final path = _root.text.trim();
     if (path.isEmpty) return;
+    if (!await _ensureStorageAccess()) return;
+    if (!mounted) return;
     await repo.setLibraryRoot(path);
     setState(() => _scanning = true);
 
@@ -370,11 +434,15 @@ class _CoversSection extends StatefulWidget {
 
 class _CoversSectionState extends State<_CoversSection> {
   bool _busy = false;
+  bool _cancelRequested = false;
   final ValueNotifier<(int, int, String)> _progress = ValueNotifier((0, 0, ''));
 
   Future<void> _embedAll() async {
     final repo = context.read<MusicRepository>();
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _cancelRequested = false;
+    });
     _progress.value = (0, 0, 'Starting…');
     if (!mounted) return;
     showDialog(
@@ -383,11 +451,15 @@ class _CoversSectionState extends State<_CoversSection> {
       builder: (_) => _ProgressDialog(
         title: 'Embedding covers into MP3s',
         progress: _progress,
+        onCancel: () => _cancelRequested = true,
       ),
     );
-    await repo.embedAllCovers(onProgress: (done, total, current) {
-      _progress.value = (done, total, current);
-    });
+    await repo.embedAllCovers(
+      onProgress: (done, total, current) {
+        _progress.value = (done, total, current);
+      },
+      isCancelled: () => _cancelRequested,
+    );
     if (mounted) {
       Navigator.of(context, rootNavigator: true).pop();
       setState(() => _busy = false);
@@ -450,37 +522,57 @@ class _CoversSectionState extends State<_CoversSection> {
 class _ProgressDialog extends StatelessWidget {
   final String title;
   final ValueNotifier<(int, int, String)> progress;
+  final VoidCallback? onCancel;
 
-  const _ProgressDialog({required this.title, required this.progress});
+  const _ProgressDialog({
+    required this.title,
+    required this.progress,
+    this.onCancel,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(title),
-      content: ValueListenableBuilder<(int, int, String)>(
-        valueListenable: progress,
-        builder: (context, value, _) {
-          final (done, total, message) = value;
-          final pct = total > 0 ? done / total : 0.0;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              LinearProgressIndicator(value: pct),
-              const SizedBox(height: 12),
-              Text('$done / $total'),
-              const SizedBox(height: 4),
-              Text(
-                message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: SpotlessColors.onSurfaceMedium,
-                  fontSize: 12,
+    return PopScope(
+      // Back must not silently dismiss a running import/scan: treat it as a
+      // cancel request and keep the dialog until the operation winds down.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) onCancel?.call();
+      },
+      child: AlertDialog(
+        title: Text(title),
+        content: ValueListenableBuilder<(int, int, String)>(
+          valueListenable: progress,
+          builder: (context, value, _) {
+            final (done, total, message) = value;
+            final pct = total > 0 ? done / total : 0.0;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: pct),
+                const SizedBox(height: 12),
+                Text('$done / $total'),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SpotlessColors.onSurfaceMedium,
+                    fontSize: 12,
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
+        actions: [
+          if (onCancel != null)
+            TextButton(
+              onPressed: onCancel,
+              child: const Text('Cancel'),
+            ),
+        ],
       ),
     );
   }
@@ -495,7 +587,6 @@ class _ProvidersSection extends StatefulWidget {
 
 class _ProvidersSectionState extends State<_ProvidersSection> {
   final _lastFmController = TextEditingController();
-  final _qlooController = TextEditingController();
 
   @override
   void initState() {
@@ -506,17 +597,14 @@ class _ProvidersSectionState extends State<_ProvidersSection> {
   Future<void> _loadKeys() async {
     final repo = context.read<MusicRepository>();
     final lastFm = await repo.getLastFmApiKey();
-    final qloo = await repo.getQlooApiKey();
     if (mounted) {
       _lastFmController.text = lastFm ?? '';
-      _qlooController.text = qloo ?? '';
     }
   }
 
   @override
   void dispose() {
     _lastFmController.dispose();
-    _qlooController.dispose();
     super.dispose();
   }
 
@@ -527,62 +615,33 @@ class _ProvidersSectionState extends State<_ProvidersSection> {
     return _SettingsCard(
       icon: Icons.auto_awesome_rounded,
       title: 'Recommendation Providers',
-      subtitle: 'Configure external recommendation APIs (Spec §17, §48). '
-          'Local offline similarity remains active as a permanent baseline.',
-      child: Column(
-        children: [
-          TextField(
-            controller: _lastFmController,
-            decoration: InputDecoration(
-              labelText: 'Last.fm API Key',
-              hintText: 'Enter API Key',
-              filled: true,
-              fillColor: SpotlessColors.surfaceContainerHigh,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
-                borderSide: BorderSide.none,
-              ),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.save_rounded),
-                tooltip: 'Save Last.fm Key',
-                onPressed: () async {
-                  await repo.setLastFmApiKey(_lastFmController.text);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Last.fm API key saved')),
-                    );
-                  }
-                },
-              ),
-            ),
+      subtitle: 'Optional Last.fm key for external track similarity. Local '
+          'offline similarity remains active as the permanent baseline.',
+      child: TextField(
+        controller: _lastFmController,
+        obscureText: true,
+        decoration: InputDecoration(
+          labelText: 'Last.fm API Key',
+          hintText: 'Enter API Key',
+          filled: true,
+          fillColor: SpotlessColors.surfaceContainerHigh,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
+            borderSide: BorderSide.none,
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _qlooController,
-            decoration: InputDecoration(
-              labelText: 'Qloo API Key',
-              hintText: 'Enter API Key',
-              filled: true,
-              fillColor: SpotlessColors.surfaceContainerHigh,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(SpotlessColors.radiusMd),
-                borderSide: BorderSide.none,
-              ),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.save_rounded),
-                tooltip: 'Save Qloo Key',
-                onPressed: () async {
-                  await repo.setQlooApiKey(_qlooController.text);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Qloo API key saved')),
-                    );
-                  }
-                },
-              ),
-            ),
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.save_rounded),
+            tooltip: 'Save Last.fm Key',
+            onPressed: () async {
+              await repo.setLastFmApiKey(_lastFmController.text);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Last.fm API key saved')),
+                );
+              }
+            },
           ),
-        ],
+        ),
       ),
     );
   }
@@ -595,6 +654,7 @@ class _DiagnosticsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final repo = context.read<MusicRepository>();
     final theme = Theme.of(context);
+    final downloads = context.watch<DownloadManager>();
 
     return _SettingsCard(
       icon: Icons.analytics_outlined,
@@ -602,6 +662,31 @@ class _DiagnosticsSection extends StatelessWidget {
       subtitle: 'System observability, listening metrics, and recommendation maintenance',
       child: Column(
         children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(
+              Icons.download_for_offline_outlined,
+              color: SpotlessColors.success,
+            ),
+            title: const Text('Download manager'),
+            subtitle: Text(
+              downloads.activeCount > 0
+                  ? '${downloads.activeCount} active or queued download(s)'
+                  : 'View download history, cancel and retry',
+              style: const TextStyle(
+                color: SpotlessColors.onSurfaceMedium,
+                fontSize: 12,
+              ),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right_rounded,
+              color: SpotlessColors.onSurfaceDim,
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DownloadsPage()),
+            ),
+          ),
+          const Divider(color: Colors.white12),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(

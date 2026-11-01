@@ -15,15 +15,24 @@ import '../models/song_status.dart';
 import '../youtube/yt_bridge.dart';
 import 'cover_service.dart';
 import 'discovery_service.dart';
+import 'download_manager.dart';
 import 'downloader.dart';
 import 'feedback_service.dart';
 import 'lastfm_provider.dart';
 import 'library_scanner.dart';
 import 'local_provider.dart';
-import 'qloo_provider.dart';
 import 'rating_service.dart';
 import 'recommender.dart';
 import 'session_manager.dart';
+
+/// Aggregated album row shown by the Albums grid.
+typedef AlbumSummary = ({
+  String album,
+  String artist,
+  int count,
+  String? artPath,
+  String? artUrl,
+});
 
 /// Result of resolving a song into something playable.
 class ResolvedPlayable {
@@ -45,7 +54,6 @@ class ResolvedPlayable {
 class MusicRepository {
   static const _prefsRootKey = 'library_root';
   static const _lastFmKeyPref = 'lastfm_api_key';
-  static const _qlooKeyPref = 'qloo_api_key';
 
   final AppDatabase db;
   final YtBridge yt;
@@ -56,6 +64,7 @@ class MusicRepository {
   late final SessionManager sessionManager;
   late final RatingService ratingService;
   late final FeedbackService feedbackService;
+  late final DownloadManager downloads;
   late DiscoveryService discoveryService;
 
   late final Future<SharedPreferences> _prefs =
@@ -67,6 +76,10 @@ class MusicRepository {
     sessionManager = SessionManager(db: db);
     ratingService = RatingService(db: db, sessionManager: sessionManager);
     feedbackService = FeedbackService(db: db, sessionManager: sessionManager);
+    downloads = DownloadManager(
+      perform: _performDownload,
+      cancelRemote: yt.cancelDownload,
+    );
     discoveryService = DiscoveryService(
       db: db,
       sessionManager: sessionManager,
@@ -75,7 +88,6 @@ class MusicRepository {
       providers: [
         LocalMetadataProvider(db),
         LastFmProvider(),
-        QlooProvider(),
       ],
       ytBridge: yt,
     );
@@ -83,7 +95,6 @@ class MusicRepository {
 
   void _updateProviders(SharedPreferences prefs) {
     final lastFmKey = prefs.getString(_lastFmKeyPref);
-    final qlooKey = prefs.getString(_qlooKeyPref);
     discoveryService = DiscoveryService(
       db: db,
       sessionManager: sessionManager,
@@ -92,7 +103,6 @@ class MusicRepository {
       providers: [
         LocalMetadataProvider(db),
         LastFmProvider(apiKey: lastFmKey),
-        QlooProvider(apiKey: qlooKey),
       ],
       ytBridge: yt,
     );
@@ -130,17 +140,6 @@ class MusicRepository {
       await prefs.remove(_lastFmKeyPref);
     } else {
       await prefs.setString(_lastFmKeyPref, key.trim());
-    }
-    _updateProviders(prefs);
-  }
-
-  Future<String?> getQlooApiKey() async => (await _prefs).getString(_qlooKeyPref);
-  Future<void> setQlooApiKey(String key) async {
-    final prefs = await _prefs;
-    if (key.trim().isEmpty) {
-      await prefs.remove(_qlooKeyPref);
-    } else {
-      await prefs.setString(_qlooKeyPref, key.trim());
     }
     _updateProviders(prefs);
   }
@@ -196,6 +195,10 @@ class MusicRepository {
 
   Future<List<SongRow>> allSongs() => db.select(db.songs).get();
 
+  Future<SongRow?> songById(String id) => (db.select(db.songs)
+        ..where((t) => t.id.equals(id)))
+      .getSingleOrNull();
+
   /// Returns songs in the given playlist ID using the standard PlaylistSongs join table.
   /// (Sleep and No Sleep are standard playlists, no hardcoded column queries).
   Future<List<SongRow>> playlist(String playlistId) => playlistSongRows(playlistId);
@@ -228,6 +231,53 @@ class MusicRepository {
     );
   }
 
+  /// Fetches lyrics from LRCLIB for [song] and persists them.
+  ///
+  /// With [force] false existing lyrics are kept (a local .lrc file is more
+  /// trustworthy than a remote match). The Python side rejects fuzzy matches
+  /// whose recording duration diverges too far, so a live/cover recording is
+  /// not silently given the studio track's timestamps.
+  Future<Lyrics?> fetchLyricsFor(SongRow song, {bool force = false}) async {
+    final existing = await (db.select(db.lyricsTable)
+          ..where((t) => t.songId.equals(song.id)))
+        .getSingleOrNull();
+    if (existing != null && !force) return lyricsFor(song);
+
+    final lyr = await yt.fetchLyrics(
+      song.title,
+      song.artist,
+      album: song.album,
+      durationSeconds:
+          song.durationMs != null ? song.durationMs! ~/ 1000 : null,
+    );
+    final text = (lyr['lyrics'] as String?)?.trim();
+    if (text == null || text.isEmpty) return null;
+
+    final expected = song.durationMs != null ? song.durationMs! / 1000.0 : null;
+    final matched = (lyr['matched_duration'] as num?)?.toDouble();
+    if (expected != null &&
+        matched != null &&
+        matched > 0 &&
+        (matched - expected).abs() > 8) {
+      debugPrint('[lyrics] rejected mismatch for ${song.id}: '
+          '${matched}s vs ${expected}s');
+      return null;
+    }
+
+    final isSynced = lyr['is_synced'] as bool? ?? false;
+    await db.into(db.lyricsTable).insert(
+          LyricsTableCompanion.insert(
+            songId: song.id,
+            type: isSynced ? 'lrc' : 'txt',
+            content: text,
+          ),
+          mode: InsertMode.insertOrReplace,
+        );
+    return isSynced
+        ? LrcParser.parse(text)
+        : Lyrics(synced: false, lines: const [], plainText: text);
+  }
+
   // ---- playback resolution ----
 
   /// Returns a playable source for the song: a local file path when
@@ -238,8 +288,8 @@ class MusicRepository {
   Future<ResolvedPlayable> resolve(SongRow song) async {
     if (kDebugMode) debugPrint('[repo] resolve ${song.id} ${song.title}');
     final sw = Stopwatch()..start();
-    if (song.status == SongStatus.downloaded.name &&
-        song.localPath != null &&
+    if (song.localPath != null &&
+        song.localPath!.isNotEmpty &&
         File(song.localPath!).existsSync()) {
       debugPrint('[resolve] ${song.id} ${song.title}: local '
           '${sw.elapsedMilliseconds}ms');
@@ -249,12 +299,50 @@ class MusicRepository {
         status: SongStatus.downloaded,
       );
     }
-    // Not downloaded (or the file vanished): stream from YouTube. Songs
-    // without a youtubeId (plain playlist-only rows, status missing) have
-    // nothing to stream — leave them to the caller as missing.
-    if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
+
+    var youtubeId = song.youtubeId;
+
+    // Playlist-only rows and external-discovery candidates have no YouTube id
+    // yet. Resolve one lazily through the canonical scorer instead of showing
+    // "nothing to play" for every recommendation.
+    if (youtubeId == null || youtubeId.isEmpty) {
+      if (song.title.trim().isEmpty) {
+        throw StateError('Nothing to play: this entry has no title or source');
+      }
       try {
-        final query = 'https://www.youtube.com/watch?v=${song.youtubeId}';
+        final canonical = await yt.canonicalSearch(
+          song.artist,
+          song.title,
+          expectedDurationSeconds:
+              song.durationMs != null ? song.durationMs! ~/ 1000 : null,
+        );
+        final id = canonical['id']?.toString();
+        if (id != null && id.isNotEmpty) {
+          youtubeId = id;
+          final thumbnail = canonical['thumbnail']?.toString();
+          await (db.update(db.songs)..where((t) => t.id.equals(song.id))).write(
+            SongsCompanion(
+              youtubeId: Value(id),
+              status: const Value('streamable'),
+              albumArtUrl: Value(
+                  song.albumArtUrl ??
+                      (thumbnail != null && thumbnail.isNotEmpty
+                          ? thumbnail
+                          : null)),
+              resolvedYtTitle: Value(canonical['title']?.toString()),
+              error: const Value(null),
+            ),
+          );
+          debugPrint('[resolve] ${song.id}: canonical YouTube id $id');
+        }
+      } catch (e) {
+        debugPrint('[resolve] ${song.id}: canonical search failed: $e');
+      }
+    }
+
+    if (youtubeId != null && youtubeId.isNotEmpty) {
+      try {
+        final query = 'https://www.youtube.com/watch?v=$youtubeId';
         final info = await yt.extract(query);
         final url = info['url'] as String?;
         if (url == null || url.isEmpty) {
@@ -280,13 +368,8 @@ class MusicRepository {
         rethrow;
       }
     }
-    debugPrint('[resolve] ${song.id} ${song.title}: not downloadable/streamable '
-        '${sw.elapsedMilliseconds}ms');
-    return ResolvedPlayable(
-      source: '',
-      isStream: false,
-      status: SongStatus.missing,
-    );
+    throw StateError(
+        'No playable source found for "${song.title}" by ${song.artist}');
   }
 
   /// Search the local library (title, artist or lyrics) by keyword.
@@ -463,19 +546,38 @@ class MusicRepository {
     ]..removeWhere((a) => a.name.isEmpty);
   }
 
-  Future<List<({String album, String artist, int count})>> albums() async {
-    final q = db.selectOnly(db.songs)
-      ..addColumns([db.songs.album, db.songs.artist, db.songs.id.count()])
-      ..groupBy([db.songs.album]);
-    final rows = await q.get();
-    return [
-      for (final r in rows)
-        (
-          album: r.read(db.songs.album) ?? '',
-          artist: r.read(db.songs.artist) ?? '',
-          count: r.read(db.songs.id.count()) ?? 0,
-        ),
-    ]..removeWhere((a) => a.album.isEmpty);
+  Future<List<AlbumSummary>> albums() async {
+    // Group in Dart so each album can carry representative cover art. The
+    // same album title can belong to different artists ("Greatest Hits"),
+    // so the (album, artist) pair is the key.
+    final songs = await db.select(db.songs).get();
+    final byKey = <String, AlbumSummary>{};
+    for (final s in songs) {
+      final album = s.album?.trim() ?? '';
+      if (album.isEmpty) continue;
+      final key = '${album.toLowerCase()}\u0000${s.artist.toLowerCase()}';
+      final existing = byKey[key];
+      if (existing == null) {
+        byKey[key] = (
+          album: album,
+          artist: s.artist,
+          count: 1,
+          artPath: s.albumArtPath,
+          artUrl: s.albumArtUrl,
+        );
+      } else {
+        byKey[key] = (
+          album: existing.album,
+          artist: existing.artist,
+          count: existing.count + 1,
+          artPath: existing.artPath ?? s.albumArtPath,
+          artUrl: existing.artUrl ?? s.albumArtUrl,
+        );
+      }
+    }
+    final result = byKey.values.toList()
+      ..sort((a, b) => a.album.toLowerCase().compareTo(b.album.toLowerCase()));
+    return result;
   }
 
   Future<List<SongRow>> songsByArtist(String artist) {
@@ -490,8 +592,12 @@ class MusicRepository {
     return q.get();
   }
 
-  Future<List<SongRow>> songsByAlbum(String album) {
-    final q = db.select(db.songs)..where((t) => t.album.equals(album));
+  Future<List<SongRow>> songsByAlbum(String album, {String? artist}) {
+    final q = db.select(db.songs)
+      ..where((t) =>
+          artist == null
+              ? t.album.equals(album)
+              : t.album.equals(album) & t.artist.equals(artist));
     q.orderBy([
       (t) => OrderingTerm.asc(t.trackNumber.isNull()),
       (t) => OrderingTerm.asc(t.trackNumber),
@@ -544,23 +650,43 @@ class MusicRepository {
   }
 
   Future<void> recordPlay(SongRow song) async {
-    await (db.update(db.songs)..where((t) => t.id.equals(song.id))).write(
-      SongsCompanion(
-        lastPlayedAt: Value(DateTime.now()),
-        playCount: Value(song.playCount + 1),
-      ),
+    // Increment in SQL rather than writing `song.playCount + 1`: the SongRow
+    // can be stale (two rapid plays, or a row captured before another update)
+    // and would otherwise lose counts.
+    await db.customUpdate(
+      'UPDATE songs SET play_count = play_count + 1, last_played_at = ? '
+      'WHERE id = ?',
+      variables: [Variable<DateTime>(DateTime.now()), Variable<String>(song.id)],
+      updates: {db.songs},
     );
     await feedbackService.recordPlayStart(song.id);
   }
 
   // ---- downloads (in-app) ----
 
+  /// Queues the song behind any in-flight downloads and returns when this
+  /// specific download finishes. Throws [DownloadCancelledException] when
+  /// the user cancels.
   Future<DownloadResult> downloadSong(
+    SongRow song, {
+    void Function(double percent)? onProgress,
+  }) {
+    return downloads.enqueue(song, onProgress: onProgress);
+  }
+
+  Future<DownloadResult> _performDownload(
     SongRow song, {
     void Function(double percent)? onProgress,
   }) async {
     final sw = Stopwatch()..start();
     debugPrint('[download] ${song.id} ${song.title}: start');
+    void throwIfCancelled() {
+      if (downloads.active?.cancelRequested ?? false) {
+        throw const DownloadCancelledException();
+      }
+    }
+
+    throwIfCancelled();
     Timer? poller;
     if (onProgress != null) {
       poller = Timer.periodic(const Duration(milliseconds: 500), (_) async {
@@ -594,10 +720,26 @@ class MusicRepository {
           downloadUrl = 'ytsearch1:${song.title} ${song.artist} official audio';
         }
       }
+      // A cancel can land while the canonical search / URL resolution is
+      // still running, before yt-dlp has started. Don't begin the transfer.
+      throwIfCancelled();
       final res = await downloader.download(
         downloadUrl,
         onProgress: onProgress,
       );
+      if (res.cancelled || (downloads.active?.cancelRequested ?? false)) {
+        // A cancel can also land between yt-dlp clearing its cancel flag and
+        // the transfer finishing. Remove the partial file so a retry starts
+        // cleanly instead of leaving an untracked orphan.
+        final path = res.path;
+        if (path != null) {
+          try {
+            final f = File(path);
+            if (f.existsSync()) await f.delete();
+          } catch (_) {}
+        }
+        throw const DownloadCancelledException();
+      }
       debugPrint('[download] ${song.id} ${song.title}: done '
           '${sw.elapsedMilliseconds}ms path=${res.path}');
       if (res.path != null && File(res.path!).existsSync()) {
@@ -616,7 +758,8 @@ class MusicRepository {
   Future<void> _finalizeDownload(SongRow song, String path,
       {DownloadResult? result}) async {
     try {
-      await yt.setTags(path, title: song.title, artist: song.artist);
+      await yt.setTags(path,
+          title: song.title, artist: song.artist, album: song.album);
     } catch (_) {}
     final info = await yt.probe(path).catchError((_) => const <String, dynamic>{});
     final durationMs = (info['duration'] as num?)?.toInt() != null
@@ -666,28 +809,21 @@ class MusicRepository {
           ..where((t) => t.id.equals(song.id)))
         .getSingleOrNull();
     if (fresh != null && fresh.albumArtUrl != null) {
+      // The freshly downloaded file has no embedded art yet.
       await covers.embedFor(fresh);
     }
-    try {
-      final lyr = await yt.fetchLyrics(
-        song.title,
-        song.artist,
-        album: song.album,
-        durationSeconds: durationMs != null ? durationMs ~/ 1000 : null,
-      );
-      final lyricsText = lyr['lyrics'] as String?;
-      final isSynced = lyr['is_synced'] as bool? ?? false;
-      if (lyricsText != null && lyricsText.isNotEmpty && fresh != null) {
-        await db.into(db.lyricsTable).insert(
-          LyricsTableCompanion.insert(
-            songId: fresh.id,
-            type: isSynced ? 'lrc' : 'txt',
-            content: lyricsText,
-          ),
-          mode: InsertMode.insertOrReplace,
-        );
+    if (fresh != null) {
+      // Never replace better local .lrc lyrics with a remote match; only
+      // fetch when the track has none at all.
+      final existingLyrics = await (db.select(db.lyricsTable)
+            ..where((t) => t.songId.equals(fresh.id)))
+          .getSingleOrNull();
+      if (existingLyrics == null) {
+        try {
+          await fetchLyricsFor(fresh);
+        } catch (_) {}
       }
-    } catch (_) {}
+    }
   }
 
   // ---- playlist CSV import (from scratch, no local files needed) ----
@@ -708,6 +844,7 @@ class MusicRepository {
   Future<({int total, int imported, int skipped, int failed})> importPlaylistCsvs(
     List<String> paths, {
     void Function(int done, int total, String message)? onProgress,
+    bool Function()? isCancelled,
   }) async {
     // Parse everything up front so progress can count the real total.
     final files = <(String name, List<Map<String, String>> rows)>[];
@@ -727,6 +864,7 @@ class MusicRepository {
     var skipped = 0;
     var failed = 0;
 
+    outer:
     for (var f = 0; f < files.length; f++) {
       final (name, rows) = files[f];
       final playlistId = 'pl_${DateTime.now().millisecondsSinceEpoch}_$f';
@@ -739,6 +877,7 @@ class MusicRepository {
         mode: InsertMode.insertOrIgnore,
       );
       for (var i = 0; i < rows.length; i++) {
+        if (isCancelled?.call() ?? false) break outer;
         final r = rows[i];
         final lower = r.map((k, v) => MapEntry(k.toLowerCase(), v));
         final title = _csvVal(
@@ -821,6 +960,15 @@ class MusicRepository {
         try {
           await downloadSong(row);
           imported++;
+        } on DownloadCancelledException {
+          // Leave the row retryable; a cancelled import must not poison the
+          // song as permanently failed.
+          await (db.update(db.songs)..where((t) => t.id.equals(songId)))
+              .write(SongsCompanion(
+            status: Value(SongStatus.analyzing.name),
+            error: const Value('Cancelled'),
+          ));
+          break outer;
         } catch (e) {
           failed++;
           await (db.update(db.songs)..where((t) => t.id.equals(songId)))

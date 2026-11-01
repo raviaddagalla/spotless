@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -63,14 +65,26 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
     final repo = context.read<MusicRepository>();
     final messenger = ScaffoldMessenger.of(context);
     try {
+      final songRow = track.toSongRow();
+      final alreadyLocal = songRow.status == 'downloaded' &&
+          songRow.localPath != null &&
+          await File(songRow.localPath!).exists();
       await repo.discoveryService.promoteCandidate(track);
+      if (alreadyLocal) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('"${track.title}" is already in your library.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
       messenger.showSnackBar(
         SnackBar(
           content: Text('Added "${track.title}" to library! Downloading...'),
           behavior: SnackBarBehavior.floating,
         ),
       );
-      final songRow = track.toSongRow();
       await repo.downloadSong(songRow);
       messenger.showSnackBar(
         SnackBar(
@@ -91,6 +105,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerController>();
+    final repo = context.read<MusicRepository>();
 
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
@@ -154,7 +169,7 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                              'Listen to a few songs in your library or configure Last.fm / Qloo in Settings to kickstart discovery.',
+                              'Listen to a few songs in your library or configure a Last.fm key in Settings to kickstart discovery.',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Colors.white60),
                             ),
@@ -301,6 +316,12 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                                         if (isPlayingThis) {
                                           player.togglePlayPause();
                                         } else {
+                                          // Streaming a recommendation is an
+                                          // interaction; feed it back so the
+                                          // repetition penalty can apply on
+                                          // the next ranking pass.
+                                          await repo.discoveryService
+                                              .markStreamed(track);
                                           await player
                                               .playSong(track.toSongRow());
                                           if (context.mounted) {

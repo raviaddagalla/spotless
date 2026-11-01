@@ -33,7 +33,7 @@ class RecommendationCandidate {
 /// Abstract provider interface for music recommendations.
 ///
 /// Per Specification §17 & §47:
-/// - Provides a decoupled interface for Last.fm, Qloo, or local fallback.
+/// - Provides a decoupled interface for Last.fm or the local fallback.
 /// - Gracefully degrades on network error, rate limit, or missing credentials.
 /// - Never crashes the host application.
 abstract class RecommendationProvider {

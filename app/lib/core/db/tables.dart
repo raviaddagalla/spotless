@@ -135,7 +135,7 @@ class DiscoveryCandidates extends Table {
   TextColumn get youtubeId => text().nullable()();
   IntColumn get durationMs => integer().nullable()();
   TextColumn get albumArtUrl => text().nullable()();
-  /// 'lastfm', 'qloo', 'local'
+  /// 'lastfm' or 'local'
   TextColumn get provider => text()();
   TextColumn get seedSongId => text().nullable()();
   TextColumn get sessionId => text().nullable()();

@@ -44,6 +44,7 @@ class AppDatabase extends _$AppDatabase {
                     name: 'Sleep',
                     createdAt: DateTime(2026, 1, 1),
                   ),
+                  mode: InsertMode.insertOrIgnore,
                 );
             await db.into(db.playlists).insert(
                   PlaylistsCompanion.insert(
@@ -51,6 +52,7 @@ class AppDatabase extends _$AppDatabase {
                     name: 'No Sleep',
                     createdAt: DateTime(2026, 1, 1),
                   ),
+                  mode: InsertMode.insertOrIgnore,
                 );
             await m.database.customStatement(
               "INSERT INTO playlist_songs (playlist_id, song_id, position) "

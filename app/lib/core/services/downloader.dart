@@ -11,6 +11,7 @@ class DownloadResult {
   final String? videoId;
   final String? thumbnail;
   final String? error;
+  final bool cancelled;
 
   const DownloadResult({
     this.path,
@@ -20,6 +21,7 @@ class DownloadResult {
     this.videoId,
     this.thumbnail,
     this.error,
+    this.cancelled = false,
   });
 }
 
@@ -45,6 +47,9 @@ class Downloader {
     final baseName = 'dl_${DateTime.now().millisecondsSinceEpoch}';
     final outDir = _destDir.path;
     final res = await _yt.download(query, outDir, baseName);
+    if (res['cancelled'] == true) {
+      return const DownloadResult(cancelled: true);
+    }
     final path = res['path'] as String?;
     if (path == null) {
       throw Exception('No audio downloaded (yt-dlp returned no file)');

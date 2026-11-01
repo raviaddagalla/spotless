@@ -15,7 +15,7 @@ class AlbumsPage extends StatefulWidget {
 }
 
 class _AlbumsPageState extends State<AlbumsPage> {
-  late Future<List<({String album, String artist, int count})>> _future;
+  late Future<List<AlbumSummary>> _future;
 
   @override
   void initState() {
@@ -27,7 +27,7 @@ class _AlbumsPageState extends State<AlbumsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return FutureBuilder<List<({String album, String artist, int count})>>(
+    return FutureBuilder<List<AlbumSummary>>(
       future: _future,
       builder: (context, snap) {
         if (snap.hasError) {
@@ -84,6 +84,8 @@ class _AlbumsPageState extends State<AlbumsPage> {
                       child: AlbumArt(
                         title: a.album,
                         subtitle: a.artist,
+                        artPath: a.artPath,
+                        artUrl: a.artUrl,
                         size: 200,
                         borderRadius: 0,
                       ),

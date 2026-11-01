@@ -13,7 +13,7 @@ import 'rating_widget.dart';
 ///
 /// Per Specification §18 & §22:
 /// - Takes a seed track from the user's library or playback session.
-/// - Queries external recommendation providers (Last.fm, Qloo) and local acoustic features.
+/// - Queries the optional Last.fm provider and local acoustic features.
 /// - Streams recommendations with ratings and 1-tap download promotion.
 class SimilarTracksSheet extends StatefulWidget {
   final SongRow seedTrack;
@@ -283,7 +283,7 @@ class _SimilarTracksSheetState extends State<SimilarTracksSheet> {
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      'Try configuring Last.fm or Qloo keys in Settings, or add more acoustic metadata to your library.',
+                                      'Try configuring a Last.fm key in Settings, or add more acoustic metadata to your library.',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                                     ),

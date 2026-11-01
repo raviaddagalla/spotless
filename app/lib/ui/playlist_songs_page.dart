@@ -61,10 +61,14 @@ class _PlaylistSongsPageState extends State<PlaylistSongsPage> {
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     final list = _songs;
     if (list == null) return;
+    // ReorderableListView reports `newIndex` using its insertion-point
+    // convention (0..length). The repository performs that adjustment
+    // internally, so the UI must pass the raw indices — decrementing here
+    // too made downward drags persist the wrong order.
     setState(() {
-      if (newIndex > oldIndex) newIndex--;
+      final target = newIndex > oldIndex ? newIndex - 1 : newIndex;
       final song = list.removeAt(oldIndex);
-      list.insert(newIndex, song);
+      list.insert(target, song);
     });
     final repo = context.read<MusicRepository>();
     await repo.reorderPlaylistSong(widget.playlistId, oldIndex, newIndex);

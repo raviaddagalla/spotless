@@ -111,7 +111,7 @@ class _DebugPageState extends State<DebugPage> {
                   title: 'Recommendation & Discovery (Spec §17-§24)',
                   icon: Icons.auto_awesome_outlined,
                   children: [
-                    _row('Providers', 'Last.fm, Qloo, Local Features'),
+                    _row('Providers', 'Last.fm, Local Features'),
                     _row('Diversity Cap', '${AppConfig.maxTracksPerArtist} tracks max per artist'),
                     _row('Download Threshold', 'Rating >= ${AppConfig.downloadPromotionThreshold}/10'),
                     _row('Novelty Weight', '${AppConfig.noveltyBonus}'),

@@ -31,7 +31,9 @@ class _AlbumDetailPageState extends State<AlbumDetailPage> {
   @override
   void initState() {
     super.initState();
-    _future = context.read<MusicRepository>().songsByAlbum(widget.album);
+    _future = context
+        .read<MusicRepository>()
+        .songsByAlbum(widget.album, artist: widget.artist);
   }
 
   @override
