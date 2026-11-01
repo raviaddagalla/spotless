@@ -56,7 +56,7 @@ class MusicRepository {
   late final SessionManager sessionManager;
   late final RatingService ratingService;
   late final FeedbackService feedbackService;
-  late final DiscoveryService discoveryService;
+  late DiscoveryService discoveryService;
 
   late final Future<SharedPreferences> _prefs =
       SharedPreferences.getInstance();
